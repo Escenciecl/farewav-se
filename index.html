@@ -140,22 +140,62 @@ function FlightCard({f,maxPrice,idx,currency="COP"}) {
 function DestCard({d,idx,origin,onSearch,currency="COP"}) {
   const [vis,setVis]=useState(false),[hov,setHov]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>setVis(true),idx*60+40);return()=>clearTimeout(t);},[]);
-  const emojis={"MAD":"🇪🇸","BCN":"🇪🇸","MIA":"🇺🇸","JFK":"🇺🇸","LAX":"🇺🇸","ORD":"🇺🇸","MCO":"🇺🇸","CDG":"🇫🇷","LHR":"🇬🇧","AMS":"🇳🇱","FCO":"🇮🇹","MXP":"🇮🇹","FRA":"🇩🇪","EZE":"🇦🇷","LIM":"🇵🇪","SCL":"🇨🇱","GRU":"🇧🇷","GIG":"🇧🇷","MEX":"🇲🇽","CUN":"🇲🇽","UIO":"🇪🇨","PTY":"🇵🇦","PUJ":"🇩🇴","HAV":"🇨🇺","DXB":"🇦🇪","YYZ":"🇨🇦","NRT":"🇯🇵"};
+  const emojis={"MAD":"🇪🇸","BCN":"🇪🇸","MIA":"🇺🇸","JFK":"🇺🇸","LAX":"🇺🇸","ORD":"🇺🇸","MCO":"🇺🇸","CDG":"🇫🇷","LHR":"🇬🇧","AMS":"🇳🇱","FCO":"🇮🇹","MXP":"🇮🇹","FRA":"🇩🇪","EZE":"🇦🇷","LIM":"🇵🇪","SCL":"🇨🇱","GRU":"🇧🇷","GIG":"🇧🇷","MEX":"🇲🇽","CUN":"🇲🇽","UIO":"🇪🇨","PTY":"🇵🇦","PUJ":"🇩🇴","HAV":"🇨🇺","DXB":"🇦🇪","YYZ":"🇨🇦","NRT":"🇯🇵","BOG":"🇨🇴","MDE":"🇨🇴","BAQ":"🇨🇴","CTG":"🇨🇴"};
+  const stopColor = d.stops===0?"#00E896":"#1C8EFF";
+  const stopLabel = d.stops===0?"Directo":d.stops===1?"1 escala":`${d.stops} escalas`;
+
   return React.createElement("div",{
-    style:{opacity:vis?1:0,transform:vis?"translateY(0)":"translateY(10px)",transition:"all 0.4s cubic-bezier(.22,1,.36,1),background 0.2s,border-color 0.2s",
-      background:hov?"linear-gradient(135deg,rgba(0,232,150,0.06),rgba(28,142,255,0.06))":"rgba(255,255,255,0.02)",
+    style:{opacity:vis?1:0,transform:vis?"translateY(0)":"translateY(10px)",
+      transition:"all 0.4s cubic-bezier(.22,1,.36,1),background 0.2s,border-color 0.2s",
+      background:hov?"linear-gradient(135deg,rgba(0,232,150,0.06),rgba(28,142,255,0.04))":"rgba(255,255,255,0.02)",
       border:hov?"1px solid rgba(0,232,150,0.3)":"1px solid rgba(255,255,255,0.06)",
-      borderRadius:"14px",padding:"16px 18px",cursor:"pointer",position:"relative"},
+      borderRadius:"16px",padding:"18px",cursor:"pointer",position:"relative"},
     onMouseEnter:()=>setHov(true),onMouseLeave:()=>setHov(false),
-    onClick:()=>onSearch({origin,destination:d.code,departureDate:d.departureDate,returnDate:d.returnDate})
+    onClick:()=>onSearch({origin,destination:d.code,departureDate:d.departureDate})
   },
-    React.createElement("div",{style:{fontSize:"28px",marginBottom:"8px"}},emojis[d.code]||"✈️"),
-    React.createElement("div",{style:{fontSize:"15px",fontWeight:700,color:"#E8F4FF",marginBottom:"2px"}},d.city),
-    React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A",marginBottom:"10px"}},d.code),
-    React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#00E896",letterSpacing:"-0.03em"}},fmt(d.price,currency)),
-    React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"2px"}},"desde "+currency),
-    d.departureDate&&React.createElement("div",{style:{marginTop:"8px",fontSize:"11px",color:"#7A9BB5"}},fmtDate(d.departureDate)),
-    hov&&React.createElement("div",{style:{position:"absolute",bottom:"14px",right:"14px",fontSize:"11px",color:"#00E896",fontWeight:600}},"Ver vuelos →"));
+    // Header: bandera + ciudad + precio
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}},
+      React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:"24px",marginBottom:"4px"}},emojis[d.code]||"✈️"),
+        React.createElement("div",{style:{fontSize:"16px",fontWeight:800,color:"#E8F4FF",letterSpacing:"-0.02em"}},d.city),
+        React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A",marginTop:"1px"}},d.code)),
+      React.createElement("div",{style:{textAlign:"right"}},
+        React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#00E896",letterSpacing:"-0.03em",lineHeight:1}},fmt(d.price,currency)),
+        React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"2px"}},"por persona"))),
+
+    // Separador
+    React.createElement("div",{style:{height:"1px",background:"rgba(255,255,255,0.05)",marginBottom:"12px"}}),
+
+    // Horario
+    d.departure&&React.createElement("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px"}},
+      React.createElement("div",{style:{textAlign:"center"}},
+        React.createElement("div",{style:{fontSize:"18px",fontWeight:700,color:"#E8F4FF",letterSpacing:"-0.03em"}},d.departure),
+        React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"1px"}},origin)),
+      React.createElement("div",{style:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:"2px"}},
+        React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A"}},d.duration),
+        React.createElement("div",{style:{width:"100%",height:"1px",background:"rgba(255,255,255,0.08)",position:"relative"}},
+          React.createElement("span",{style:{position:"absolute",top:"-5px",left:"50%",transform:"translateX(-50%)",fontSize:"10px"}},"✈")),
+        React.createElement("span",{style:{fontSize:"10px",fontWeight:700,color:stopColor}},stopLabel)),
+      React.createElement("div",{style:{textAlign:"center"}},
+        React.createElement("div",{style:{fontSize:"18px",fontWeight:700,color:"#E8F4FF",letterSpacing:"-0.03em"}},d.arrival),
+        React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"1px"}},d.code))),
+
+    // Escalas detalle
+    d.layovers?.length>0&&React.createElement("div",{style:{marginBottom:"10px"}},
+      d.layovers.map((l,i)=>
+        React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:"6px",background:"rgba(28,142,255,0.06)",border:"1px solid rgba(28,142,255,0.12)",borderRadius:"8px",padding:"5px 9px",fontSize:"11px",color:"#7A9BB5"}},
+          React.createElement("span",{style:{color:"#1C8EFF"}},"●"),
+          React.createElement("span",null,"Escala en "),
+          React.createElement("span",{style:{color:"#B8D4E8",fontWeight:600}},l.cityName),
+          React.createElement("span",{style:{color:"#4A6B8A"}},"· ",l.wait," espera")))),
+
+    // Footer: aerolínea + fecha
+    React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+      React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A",fontWeight:500}},d.airline||""),
+      React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A"}},fmtDate(d.departureDate))),
+
+    // Hover CTA
+    hov&&React.createElement("div",{style:{position:"absolute",bottom:"14px",right:"14px",fontSize:"11px",color:"#00E896",fontWeight:700,background:"rgba(0,232,150,0.08)",padding:"3px 8px",borderRadius:"100px",border:"1px solid rgba(0,232,150,0.2)"}},"Ver vuelos →"));
 }
 
 /* ── Currency Picker ── */
@@ -420,7 +460,7 @@ function ExploreResults({data,onSearch,onNew}) {
     data.destinations?.length>0&&React.createElement("div",null,
       React.createElement("div",{style:{fontSize:"12px",color:"#4A6B8A",marginBottom:"14px"}},
         "Clic en un destino para ver los vuelos disponibles 👇"),
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"10px"}},
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"12px"}},
         data.destinations.map((d,i)=>React.createElement(DestCard,{key:d.code,d,idx:i,origin:data.origin,currency:data.currency||"COP",
           onSearch:params=>onSearch({...params,budget:data.budget,currency:data.currency||"COP",mode:"search"})})))),
     React.createElement("button",{onClick:onNew,
