@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Farewave · Busca vuelos con IA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; }
+    body { background: #070D14; font-family: 'DM Sans', system-ui, sans-serif; color: #E8F4FF; }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes bounce   { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
+    @keyframes blink    { 0%,100%{opacity:1} 50%{opacity:0} }
+    @keyframes floatOrb { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,20px)} }
+    textarea::placeholder { color: rgba(74,107,138,0.6); }
+    textarea { font-family: inherit; }
+    ::-webkit-scrollbar       { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,232,150,0.15); border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const fmt = n => `$${Number(n).toLocaleString("es-CO")}`;
+
+/* ── Claude extrae parámetros del mensaje ─────────────── */
+async function parseMessage(text) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 300,
+      messages: [{
+        role: "user",
+        content: `Extrae los parámetros de vuelo del siguiente mensaje. Devuelve SOLO un JSON válido, sin markdown:
+
+"${text}"
+
+{
+  "origin": "CÓDIGO IATA 3 letras del origen (ej: BOG)",
+  "destination": "CÓDIGO IATA 3 letras del destino (ej: MAD)",
+  "date": "YYYY-MM-DD",
+  "passengers": 1
+}
+
+Reglas: usa el año 2025 o 2026. Si no hay fecha exacta, usa el primer día del mes mencionado.`
+      }]
+    })
+  });
+  const data = await res.json();
+  const raw = data.content.map(b => b.text || "").join("");
+  return JSON.parse(raw.replace(/```json|```/g, "").trim());
+}
+
+/* ── Llama a la Netlify Function ──────────────────────── */
+async function searchFlights(params) {
+  const res = await fetch("/api/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error("Error del servidor");
+  return res.json();
+}
+
+/* ── Cursor parpadeante ───────────────────────────────── */
+function Cursor() {
+  return React.createElement("span", {
+    style: { display:"inline-block", width:"2px", height:"15px", background:"#00E896",
+      marginLeft:"2px", verticalAlign:"middle", borderRadius:"1px", animation:"blink 1s step-end infinite" }
+  });
+}
+
+/* ── Texto animado letra por letra ───────────────────── */
+function TypedText({ text, speed = 12, onDone }) {
+  const [shown, setShown] = useState("");
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    setShown(""); setDone(false);
+    let i = 0;
+    const iv = setInterval(() => {
+      i++; setShown(text.slice(0, i));
+      if (i >= text.length) { clearInterval(iv); setDone(true); onDone?.(); }
+    }, speed);
+    return () => clearInterval(iv);
+  }, [text]);
+  return React.createElement(React.Fragment, null, shown, !done && React.createElement(Cursor));
+}
+
+/* ── Orbes de fondo ───────────────────────────────────── */
+function BgOrbs() {
+  return React.createElement("div", { style:{ position:"fixed", inset:0, zIndex:0, pointerEvents:"none", overflow:"hidden" } },
+    React.createElement("div", { style:{ position:"absolute", width:"600px", height:"600px", borderRadius:"50%", background:"radial-gradient(circle,rgba(0,232,150,0.04) 0%,transparent 70%)", top:"-200px", left:"-100px", animation:"floatOrb 18s ease-in-out infinite" } }),
+    React.createElement("div", { style:{ position:"absolute", width:"500px", height:"500px", borderRadius:"50%", background:"radial-gradient(circle,rgba(28,142,255,0.05) 0%,transparent 70%)", bottom:"-150px", right:"-100px", animation:"floatOrb 22s ease-in-out infinite reverse" } })
+  );
+}
+
+/* ── Badge de precio ──────────────────────────────────── */
+function DealBadge({ score }) {
+  const c = score >= 65
+    ? { l:"Precio bajo",    bg:"rgba(0,232,150,0.08)",  tx:"#00E896", border:"rgba(0,232,150,0.2)" }
+    : score >= 40
+    ? { l:"Precio típico",  bg:"rgba(28,142,255,0.08)", tx:"#60AAFF", border:"rgba(28,142,255,0.2)" }
+    : { l:"Precio alto",    bg:"rgba(255,100,100,0.08)",tx:"#FF7070", border:"rgba(255,100,100,0.2)" };
+  return React.createElement("span", {
+    style:{ display:"inline-flex", alignItems:"center", gap:"5px", background:c.bg,
+      border:`1px solid ${c.border}`, borderRadius:"100px", padding:"2px 10px",
+      fontSize:"11px", fontWeight:600, color:c.tx }
+  },
+    React.createElement("span", { style:{ width:"5px", height:"5px", borderRadius:"50%", background:c.tx, display:"inline-block", boxShadow:`0 0 6px ${c.tx}` } }),
+    c.l
+  );
+}
+
+/* ── Barra de precio ──────────────────────────────────── */
+function PriceMeter({ value, max }) {
+  const pct = Math.min(100, Math.round((value / max) * 100));
+  const color = pct < 50 ? "#00E896" : pct < 78 ? "#1C8EFF" : "#FF7070";
+  return React.createElement("div", { style:{ width:"80px", height:"3px", background:"rgba(255,255,255,0.06)", borderRadius:"3px", overflow:"hidden" } },
+    React.createElement("div", { style:{ width:`${pct}%`, height:"100%", background:color, borderRadius:"3px", transition:"width 0.8s ease", boxShadow:`0 0 6px ${color}60` } })
+  );
+}
+
+/* ── Tarjeta de vuelo ─────────────────────────────────── */
+function FlightCard({ f, maxPrice, idx }) {
+  const [vis, setVis] = useState(false);
+  const [hov, setHov] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setVis(true), idx * 110 + 80); return () => clearTimeout(t); }, []);
+  const score = Math.round(100 - (f.price / maxPrice) * 100) + 18;
+  const stopLabel = f.stops === 0 ? "Directo" : f.stops === 1 ? "1 escala" : `${f.stops} escalas`;
+  const stopColor = f.stops === 0 ? "#00E896" : "#1C8EFF";
+
+  return React.createElement("div", {
+    style:{
+      opacity: vis?1:0, transform: vis?"translateY(0)":"translateY(12px)",
+      transition:"all 0.5s cubic-bezier(.22,1,.36,1), background 0.2s, border-color 0.2s",
+      background: hov ? "linear-gradient(135deg,rgba(0,232,150,0.05),rgba(28,142,255,0.05))" : "rgba(255,255,255,0.02)",
+      border: hov ? "1px solid rgba(0,232,150,0.35)" : f.best ? "1px solid rgba(0,232,150,0.2)" : "1px solid rgba(255,255,255,0.06)",
+      borderRadius:"14px", padding:"18px 22px", cursor:"pointer",
+      boxShadow: hov ? "0 4px 30px rgba(0,232,150,0.07)" : "none",
+    },
+    onMouseEnter: () => setHov(true),
+    onMouseLeave: () => setHov(false),
+  },
+    f.best && React.createElement("div", { style:{ marginBottom:"11px" } },
+      React.createElement("span", { style:{ fontSize:"11px", background:"rgba(0,232,150,0.1)", color:"#00E896", fontWeight:700, padding:"3px 10px", borderRadius:"100px", border:"1px solid rgba(0,232,150,0.25)" } }, "✦ Mejor opción")
+    ),
+    React.createElement("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"14px" } },
+      React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:"18px", flex:1, minWidth:"210px" } },
+        React.createElement("div", { style:{ textAlign:"center" } },
+          React.createElement("div", { style:{ fontSize:"26px", fontWeight:800, color:"#E8F4FF", letterSpacing:"-0.05em", lineHeight:1 } }, f.departure),
+          React.createElement("div", { style:{ fontSize:"12px", color:"#4A6B8A", marginTop:"3px", fontWeight:600, letterSpacing:"0.05em" } }, f.from)
+        ),
+        React.createElement("div", { style:{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:"4px" } },
+          React.createElement("div", { style:{ fontSize:"11px", color:"#4A6B8A" } }, f.duration),
+          React.createElement("div", { style:{ display:"flex", alignItems:"center", width:"100%", gap:"4px" } },
+            React.createElement("div", { style:{ flex:1, height:"1px", background:"rgba(255,255,255,0.06)" } }),
+            React.createElement("span", { style:{ fontSize:"11px", color:"#4A6B8A" } }, "✈"),
+            React.createElement("div", { style:{ flex:1, height:"1px", background:"rgba(255,255,255,0.06)" } })
+          ),
+          React.createElement("span", { style:{ fontSize:"11px", fontWeight:700, color:stopColor } }, stopLabel)
+        ),
+        React.createElement("div", { style:{ textAlign:"center" } },
+          React.createElement("div", { style:{ fontSize:"26px", fontWeight:800, color:"#E8F4FF", letterSpacing:"-0.05em", lineHeight:1 } }, f.arrival),
+          React.createElement("div", { style:{ fontSize:"12px", color:"#4A6B8A", marginTop:"3px", fontWeight:600, letterSpacing:"0.05em" } }, f.to)
+        )
+      ),
+      React.createElement("div", { style:{ textAlign:"right", minWidth:"130px" } },
+        React.createElement("div", { style:{ marginBottom:"5px", display:"flex", justifyContent:"flex-end" } }, React.createElement(DealBadge, { score })),
+        React.createElement("div", { style:{ fontSize:"24px", fontWeight:800, letterSpacing:"-0.04em", color: score >= 65 ? "#00E896" : "#E8F4FF", lineHeight:1 } }, fmt(f.price)),
+        React.createElement("div", { style:{ fontSize:"11px", color:"#4A6B8A", margin:"4px 0 8px" } }, f.airline),
+        React.createElement("div", { style:{ display:"flex", justifyContent:"flex-end" } }, React.createElement(PriceMeter, { value:f.price, max:maxPrice }))
+      )
+    ),
+    f.connectionInfo && React.createElement("div", { style:{ marginTop:"12px", paddingTop:"11px", borderTop:"1px solid rgba(255,255,255,0.04)", fontSize:"12px", color:"#4A6B8A" } },
+      React.createElement("span", { style:{ color:"#1C8EFF" } }, "● "), "Escala en ", f.connectionInfo
+    )
+  );
+}
+
+/* ── Mensaje de resultados ────────────────────────────── */
+function ResultsMessage({ data, isLatest }) {
+  const [vis, setVis] = useState(false);
+  const [sortBy, setSortBy] = useState("best");
+  const [typed, setTyped] = useState(!isLatest);
+  useEffect(() => { const t = setTimeout(() => setVis(true), 50); return () => clearTimeout(t); }, []);
+
+  const maxPrice = data.flights?.length ? Math.max(...data.flights.map(f => f.price)) : 1;
+  const sorted = [...(data.flights||[])].sort((a,b) => {
+    if (sortBy==="price") return a.price - b.price;
+    if (sortBy==="fast")  return a.duration.localeCompare(b.duration);
+    return (b.best?1:0) - (a.best?1:0);
+  });
+  const lowest  = data.flights?.length ? Math.min(...data.flights.map(f=>f.price)) : 0;
+  const directs = data.flights?.filter(f=>f.stops===0).length || 0;
+
+  return React.createElement("div", { style:{ opacity:vis?1:0, transform:vis?"translateY(0)":"translateY(10px)", transition:"all 0.4s ease" } },
+    React.createElement("div", { style:{ display:"flex", alignItems:"flex-start", gap:"12px", marginBottom:"16px" } },
+      React.createElement("div", { style:{ width:"30px", height:"30px", borderRadius:"9px", background:"linear-gradient(135deg,#00E896,#1C8EFF)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"13px", color:"#070D14", fontWeight:900, flexShrink:0, marginTop:"1px", boxShadow:"0 2px 12px rgba(0,232,150,0.3)" } }, "✦"),
+      React.createElement("div", { style:{ flex:1 } },
+        React.createElement("div", { style:{ fontSize:"11px", fontWeight:700, color:"#00E896", marginBottom:"7px", letterSpacing:"0.08em", textTransform:"uppercase" } }, "Farewave"),
+        React.createElement("p", { style:{ fontSize:"15px", lineHeight:1.75, color:"#B8D4E8", margin:0 } },
+          isLatest && !typed ? React.createElement(TypedText, { text:data.summary, speed:13, onDone:()=>setTyped(true) }) : data.summary
+        )
+      )
+    ),
+    typed && data.flights?.length > 0 && React.createElement("div", { style:{ marginLeft:"42px" } },
+      React.createElement("div", { style:{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"16px" } },
+        lowest > 0 && React.createElement("div", { style:{ display:"inline-flex", alignItems:"center", gap:"6px", background:"rgba(0,232,150,0.06)", border:"1px solid rgba(0,232,150,0.18)", borderRadius:"10px", padding:"7px 13px" } },
+          "📉 ", React.createElement("span", { style:{ fontSize:"12px", fontWeight:600, color:"#00E896" } }, "Desde ", fmt(lowest))
+        ),
+        directs > 0 && React.createElement("div", { style:{ display:"inline-flex", alignItems:"center", gap:"6px", background:"rgba(28,142,255,0.06)", border:"1px solid rgba(28,142,255,0.18)", borderRadius:"10px", padding:"7px 13px" } },
+          "⚡ ", React.createElement("span", { style:{ fontSize:"12px", fontWeight:600, color:"#1C8EFF" } }, directs, " vuelo", directs>1?"s":"", " directo", directs>1?"s":"")
+        )
+      ),
+      React.createElement("div", { style:{ display:"flex", gap:"7px", marginBottom:"14px", flexWrap:"wrap" } },
+        [["best","Mejor opción"],["price","Más barato"],["fast","Más rápido"]].map(([k,l]) =>
+          React.createElement("button", {
+            key:k, onClick:()=>setSortBy(k),
+            style:{ padding:"5px 15px", borderRadius:"100px", fontSize:"12px", fontWeight:600, border: sortBy===k?"1px solid rgba(0,232,150,0.4)":"1px solid rgba(255,255,255,0.08)", background: sortBy===k?"rgba(0,232,150,0.1)":"transparent", color: sortBy===k?"#00E896":"#4A6B8A", cursor:"pointer" }
+          }, l)
+        )
+      ),
+      React.createElement("div", { style:{ display:"flex", flexDirection:"column", gap:"10px" } },
+        sorted.map((f,i) => React.createElement(FlightCard, { key:i, f, maxPrice, idx:i }))
+      )
+    )
+  );
+}
+
+/* ── Mensaje del usuario ──────────────────────────────── */
+function UserMessage({ text }) {
+  const [vis, setVis] = useState(false);
+  useEffect(() => { const t = setTimeout(()=>setVis(true),30); return ()=>clearTimeout(t); }, []);
+  return React.createElement("div", { style:{ display:"flex", justifyContent:"flex-end", opacity:vis?1:0, transform:vis?"translateY(0)":"translateY(6px)", transition:"all 0.3s ease" } },
+    React.createElement("div", { style:{ maxWidth:"72%", background:"linear-gradient(135deg,rgba(0,232,150,0.1),rgba(28,142,255,0.1))", border:"1px solid rgba(0,232,150,0.2)", borderRadius:"16px 16px 4px 16px", padding:"13px 18px", fontSize:"15px", color:"#D4EEF8", lineHeight:1.65 } }, text)
+  );
+}
+
+/* ── Error ────────────────────────────────────────────── */
+function ErrorMessage({ text }) {
+  return React.createElement("div", { style:{ display:"flex", gap:"12px", alignItems:"flex-start" } },
+    React.createElement("div", { style:{ width:"30px", height:"30px", borderRadius:"9px", background:"rgba(255,112,112,0.1)", border:"1px solid rgba(255,112,112,0.2)", display:"flex", alignItems:"center", justifyContent:"center", color:"#FF7070", flexShrink:0, fontSize:"14px" } }, "!"),
+    React.createElement("p", { style:{ fontSize:"14px", color:"#FF7070", lineHeight:1.65, margin:0, paddingTop:"5px" } }, text)
+  );
+}
+
+/* ── Pensando ─────────────────────────────────────────── */
+function Thinking({ step }) {
+  const labels = ["Entendiendo tu solicitud", "Consultando Amadeus", "Procesando resultados"];
+  return React.createElement("div", { style:{ display:"flex", alignItems:"flex-start", gap:"12px" } },
+    React.createElement("div", { style:{ width:"30px", height:"30px", borderRadius:"9px", background:"linear-gradient(135deg,#00E896,#1C8EFF)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"13px", color:"#070D14", fontWeight:900, flexShrink:0, boxShadow:"0 2px 12px rgba(0,232,150,0.3)" } }, "✦"),
+    React.createElement("div", { style:{ paddingTop:"5px" } },
+      React.createElement("div", { style:{ fontSize:"11px", fontWeight:700, color:"#00E896", marginBottom:"10px", letterSpacing:"0.08em", textTransform:"uppercase" } }, "Farewave"),
+      React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:"10px" } },
+        React.createElement("div", { style:{ display:"flex", gap:"5px" } },
+          [0,1,2].map(i => React.createElement("div", { key:i, style:{ width:"6px", height:"6px", borderRadius:"50%", background:"#00E896", animation:"bounce 1.2s ease-in-out infinite", animationDelay:`${i*0.2}s`, boxShadow:"0 0 8px rgba(0,232,150,0.5)" } }))
+        ),
+        React.createElement("span", { style:{ fontSize:"13px", color:"#4A6B8A" } }, labels[step] || labels[0])
+      )
+    )
+  );
+}
+
+/* ── Bienvenida ───────────────────────────────────────── */
+const SUGGESTIONS = [
+  "Quiero volar de Bogotá a Madrid en julio, tengo $2.500.000",
+  "Medellín a Cancún para el 15 de agosto, máximo $1.200.000",
+  "Lima a Miami este mes para 2 personas",
+  "Buenos Aires a Barcelona en septiembre, menos de $3.000.000",
+];
+
+function Welcome({ onSuggestion }) {
+  return React.createElement("div", { style:{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"40px 24px", minHeight:"calc(100vh - 120px)", animation:"fadeUp 0.6s ease" } },
+    React.createElement("div", { style:{ position:"relative", marginBottom:"32px" } },
+      React.createElement("div", { style:{ position:"absolute", inset:"-24px", borderRadius:"50%", background:"radial-gradient(circle,rgba(0,232,150,0.12) 0%,rgba(28,142,255,0.06) 50%,transparent 70%)" } }),
+      React.createElement("div", { style:{ width:"64px", height:"64px", borderRadius:"18px", background:"linear-gradient(135deg,#00E896,#1C8EFF)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"26px", color:"#070D14", fontWeight:900, boxShadow:"0 0 50px rgba(0,232,150,0.25)", position:"relative" } }, "✦")
+    ),
+    React.createElement("h1", { style:{ fontSize:"clamp(28px,4vw,42px)", fontWeight:800, color:"#E8F4FF", textAlign:"center", lineHeight:1.15, marginBottom:"14px", letterSpacing:"-0.04em" } },
+      "¿A dónde quieres", React.createElement("br"),
+      React.createElement("span", { style:{ background:"linear-gradient(90deg,#00E896,#1C8EFF)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" } }, "volar hoy?")
+    ),
+    React.createElement("p", { style:{ fontSize:"15px", color:"#4A6B8A", textAlign:"center", maxWidth:"360px", lineHeight:1.75, marginBottom:"12px" } },
+      "Escríbeme en lenguaje natural con tu destino, fechas y presupuesto."
+    ),
+    React.createElement("div", { style:{ display:"inline-flex", alignItems:"center", gap:"6px", background:"rgba(0,232,150,0.06)", border:"1px solid rgba(0,232,150,0.15)", borderRadius:"100px", padding:"5px 14px", marginBottom:"36px" } },
+      React.createElement("div", { style:{ width:"6px", height:"6px", borderRadius:"50%", background:"#00E896", boxShadow:"0 0 8px rgba(0,232,150,0.7)" } }),
+      React.createElement("span", { style:{ fontSize:"12px", color:"#00E896", fontWeight:600 } }, "Vuelos reales · Amadeus API")
+    ),
+    React.createElement("div", { style:{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))", gap:"10px", width:"100%", maxWidth:"580px" } },
+      SUGGESTIONS.map((s,i) => React.createElement("button", {
+        key:i, onClick:()=>onSuggestion(s),
+        style:{ padding:"14px 17px", borderRadius:"13px", background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)", cursor:"pointer", textAlign:"left", fontSize:"13px", color:"#7A9BB5", lineHeight:1.6, fontFamily:"inherit", transition:"all 0.2s" },
+        onMouseEnter: e => { e.currentTarget.style.background="rgba(0,232,150,0.05)"; e.currentTarget.style.borderColor="rgba(0,232,150,0.2)"; e.currentTarget.style.color="#B8D4E8"; },
+        onMouseLeave: e => { e.currentTarget.style.background="rgba(255,255,255,0.02)"; e.currentTarget.style.borderColor="rgba(255,255,255,0.06)"; e.currentTarget.style.color="#7A9BB5"; },
+      },
+        React.createElement("span", { style:{ color:"rgba(0,232,150,0.4)", marginRight:"6px" } }, "›"), s
+      ))
+    )
+  );
+}
+
+/* ── Input ────────────────────────────────────────────── */
+function InputBox({ value, onChange, onSend, disabled }) {
+  const ref = useRef();
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!disabled) ref.current?.focus(); }, [disabled]);
+  const handleKey = e => { if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); if (!disabled && value.trim()) onSend(); } };
+  const autoResize = e => { e.target.style.height="auto"; e.target.style.height=Math.min(e.target.scrollHeight,130)+"px"; };
+  const canSend = !disabled && value.trim();
+
+  return React.createElement("div", { style:{ padding:"14px 24px 22px", borderTop:"1px solid rgba(255,255,255,0.05)", background:"rgba(7,13,20,0.95)", backdropFilter:"blur(12px)", flexShrink:0, zIndex:10, position:"relative" } },
+    React.createElement("div", { style:{ position:"absolute", top:0, left:"10%", right:"10%", height:"1px", background:"linear-gradient(90deg,transparent,rgba(0,232,150,0.25),rgba(28,142,255,0.25),transparent)" } }),
+    React.createElement("div", { style:{ maxWidth:"780px", margin:"0 auto" } },
+      React.createElement("div", { style:{ display:"flex", alignItems:"flex-end", gap:"10px", background: focused?"rgba(0,232,150,0.04)":"rgba(255,255,255,0.03)", border: focused?"1px solid rgba(0,232,150,0.4)":"1px solid rgba(255,255,255,0.07)", borderRadius:"16px", padding:"14px 16px", boxShadow: focused?"0 0 0 3px rgba(0,232,150,0.08)":"none", transition:"all 0.22s" } },
+        React.createElement("textarea", { ref, value, onChange: e => { onChange(e.target.value); autoResize(e); }, onKeyDown:handleKey, onFocus:()=>setFocused(true), onBlur:()=>setFocused(false), placeholder:"Describe tu viaje: destino, fechas y presupuesto...", disabled, rows:1, style:{ flex:1, background:"none", border:"none", outline:"none", resize:"none", fontSize:"15px", color:"#D4EEF8", fontFamily:"inherit", lineHeight:1.6, maxHeight:"130px", overflowY:"auto", padding:"0", opacity:disabled?0.4:1 } }),
+        React.createElement("button", { onClick:onSend, disabled:!canSend, style:{ width:"38px", height:"38px", borderRadius:"11px", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:canSend?"linear-gradient(135deg,#00E896,#1C8EFF)":"rgba(255,255,255,0.05)", border:"none", cursor:canSend?"pointer":"not-allowed", transition:"all 0.2s", boxShadow:canSend?"0 2px 16px rgba(0,232,150,0.3)":"none" } },
+          React.createElement("svg", { width:"15", height:"15", viewBox:"0 0 24 24", fill:"none" },
+            React.createElement("path", { d:"M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13", stroke:canSend?"#070D14":"rgba(255,255,255,0.2)", strokeWidth:"2.5", strokeLinecap:"round", strokeLinejoin:"round" })
+          )
+        )
+      ),
+      React.createElement("p", { style:{ textAlign:"center", fontSize:"11px", color:"rgba(74,107,138,0.6)", marginTop:"10px" } }, "Enter para enviar · Shift+Enter para nueva línea")
+    )
+  );
+}
+
+/* ════════════════ APP ════════════════ */
+function App() {
+  const [messages, setMessages]   = useState([]);
+  const [input, setInput]         = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [thinkStep, setThinkStep] = useState(0);
+  const bottomRef = useRef();
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages, loading]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput("");
+    setMessages(prev => [...prev, { role:"user", text }]);
+    setLoading(true); setThinkStep(0);
+
+    try {
+      setThinkStep(0);
+      const params = await parseMessage(text);
+      setThinkStep(1);
+      const data = await searchFlights(params);
+      setThinkStep(2);
+      if (data.error) {
+        setMessages(prev => [...prev, { role:"assistant", type:"error", text:data.error }]);
+      } else {
+        setMessages(prev => [...prev, { role:"assistant", type:"results", data }]);
+      }
+    } catch(e) {
+      setMessages(prev => [...prev, { role:"assistant", type:"error", text:"No pude conectar. Verifica que las credenciales de Amadeus estén configuradas en Netlify." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return React.createElement("div", { style:{ height:"100vh", display:"flex", flexDirection:"column", background:"#070D14", overflow:"hidden", position:"relative" } },
+    React.createElement(BgOrbs),
+
+    // NAV
+    React.createElement("nav", { style:{ height:"56px", borderBottom:"1px solid rgba(255,255,255,0.05)", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"0 24px", flexShrink:0, background:"rgba(7,13,20,0.9)", backdropFilter:"blur(12px)", position:"relative", zIndex:50 } },
+      React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:"9px" } },
+        React.createElement("div", { style:{ width:"30px", height:"30px", borderRadius:"9px", background:"linear-gradient(135deg,#00E896,#1C8EFF)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"13px", color:"#070D14", fontWeight:900, boxShadow:"0 2px 14px rgba(0,232,150,0.3)" } }, "✦"),
+        React.createElement("span", { style:{ fontSize:"17px", fontWeight:800, letterSpacing:"-0.04em", color:"#E8F4FF" } },
+          "fare", React.createElement("span", { style:{ background:"linear-gradient(90deg,#00E896,#1C8EFF)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" } }, "wave")
+        )
+      ),
+      React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:"16px" } },
+        messages.length > 0 && React.createElement("button", { onClick:()=>{setMessages([]);setInput("");}, style:{ fontSize:"13px", color:"#4A6B8A", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", fontWeight:500 } }, "Nueva búsqueda"),
+        React.createElement("div", { style:{ display:"flex", alignItems:"center", gap:"6px", padding:"5px 12px", borderRadius:"100px", background:"rgba(0,232,150,0.06)", border:"1px solid rgba(0,232,150,0.15)" } },
+          React.createElement("div", { style:{ width:"6px", height:"6px", borderRadius:"50%", background:"#00E896", boxShadow:"0 0 8px rgba(0,232,150,0.7)" } }),
+          React.createElement("span", { style:{ fontSize:"11px", color:"#00E896", fontWeight:700, letterSpacing:"0.04em" } }, "Amadeus API")
+        )
+      )
+    ),
+
+    // BODY
+    React.createElement("div", { style:{ flex:1, overflowY:"auto", position:"relative", zIndex:1 } },
+      messages.length === 0
+        ? React.createElement(Welcome, { onSuggestion: s => setInput(s) })
+        : React.createElement("div", { style:{ maxWidth:"780px", margin:"0 auto", padding:"36px 24px", display:"flex", flexDirection:"column", gap:"30px" } },
+            ...messages.map((m,i) => {
+              const isLatest = i === messages.length - 1;
+              if (m.role==="user")         return React.createElement(UserMessage,    { key:i, text:m.text });
+              if (m.type==="results")      return React.createElement(ResultsMessage, { key:i, data:m.data, isLatest });
+              if (m.type==="error")        return React.createElement(ErrorMessage,   { key:i, text:m.text });
+              return null;
+            }),
+            loading && React.createElement(Thinking, { key:"thinking", step:thinkStep }),
+            React.createElement("div", { ref:bottomRef })
+          )
+    ),
+
+    React.createElement(InputBox, { value:input, onChange:setInput, onSend:send, disabled:loading })
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
