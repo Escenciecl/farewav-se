@@ -298,9 +298,73 @@ function ExploreForm({onSearch,onBack}) {
   const [origin,setOrigin]=useState("");
   const [budget,setBudget]=useState("");
   const [departureDate,setDepartureDate]=useState("");
+  const [returnDate,setReturnDate]=useState("");
+  const [roundTrip,setRoundTrip]=useState(true);
   const [currency,setCurrency]=useState("COP");
 
-  const ORIGINS=[["BOG","Bogotá"],["MDE","Medellín"],["CLO","Cali"],["CTG","Cartagena"],["BAQ","Barranquilla"],["EZE","Buenos Aires"],["LIM","Lima"],["SCL","Santiago"],["GRU","São Paulo"],["MEX","Ciudad de México"]];
+  const ORIGINS=[
+    ["──── América del Sur ────","",true],
+    ["BOG","Bogotá, Colombia"],["MDE","Medellín, Colombia"],["CLO","Cali, Colombia"],
+    ["CTG","Cartagena, Colombia"],["BAQ","Barranquilla, Colombia"],["BGA","Bucaramanga, Colombia"],
+    ["PEI","Pereira, Colombia"],["SCL","Santiago, Chile"],["ANF","Antofagasta, Chile"],
+    ["PMC","Puerto Montt, Chile"],["EZE","Buenos Aires, Argentina"],["COR","Córdoba, Argentina"],
+    ["MDZ","Mendoza, Argentina"],["BRC","Bariloche, Argentina"],["LIM","Lima, Perú"],
+    ["CUZ","Cusco, Perú"],["GRU","São Paulo, Brasil"],["GIG","Río de Janeiro, Brasil"],
+    ["BSB","Brasilia, Brasil"],["FOR","Fortaleza, Brasil"],["REC","Recife, Brasil"],
+    ["SSA","Salvador, Brasil"],["UIO","Quito, Ecuador"],["GYE","Guayaquil, Ecuador"],
+    ["MVD","Montevideo, Uruguay"],["ASU","Asunción, Paraguay"],["VVI","Santa Cruz, Bolivia"],
+    ["LPB","La Paz, Bolivia"],["CCS","Caracas, Venezuela"],["GEO","Georgetown, Guyana"],
+    ["──── América Central y Caribe ────","",true],
+    ["PTY","Ciudad de Panamá, Panamá"],["SJO","San José, Costa Rica"],["SAL","San Salvador, El Salvador"],
+    ["TGU","Tegucigalpa, Honduras"],["MGA","Managua, Nicaragua"],["GUA","Ciudad de Guatemala"],
+    ["BZE","Belize City, Belice"],["HAV","La Habana, Cuba"],["SDQ","Santo Domingo, R. Dominicana"],
+    ["PUJ","Punta Cana, R. Dominicana"],["SJU","San Juan, Puerto Rico"],["KIN","Kingston, Jamaica"],
+    ["NAS","Nassau, Bahamas"],["POS","Puerto España, Trinidad"],["CUR","Willemstad, Curazao"],
+    ["──── América del Norte ────","",true],
+    ["MEX","Ciudad de México, México"],["CUN","Cancún, México"],["GDL","Guadalajara, México"],
+    ["MTY","Monterrey, México"],["MID","Mérida, México"],["OAX","Oaxaca, México"],
+    ["MIA","Miami, USA"],["JFK","Nueva York, USA"],["LAX","Los Ángeles, USA"],
+    ["ORD","Chicago, USA"],["MCO","Orlando, USA"],["SFO","San Francisco, USA"],
+    ["LAS","Las Vegas, USA"],["SEA","Seattle, USA"],["ATL","Atlanta, USA"],
+    ["DFW","Dallas, USA"],["BOS","Boston, USA"],["WAS","Washington DC, USA"],
+    ["HNL","Honolulu, Hawaii, USA"],["YYZ","Toronto, Canadá"],["YVR","Vancouver, Canadá"],
+    ["YUL","Montreal, Canadá"],["YYC","Calgary, Canadá"],
+    ["──── Europa ────","",true],
+    ["MAD","Madrid, España"],["BCN","Barcelona, España"],["AGP","Málaga, España"],
+    ["PMI","Palma de Mallorca, España"],["LPA","Gran Canaria, España"],["TFN","Tenerife, España"],
+    ["LIS","Lisboa, Portugal"],["OPO","Oporto, Portugal"],["CDG","París, Francia"],
+    ["NCE","Niza, Francia"],["LYS","Lyon, Francia"],["MRS","Marsella, Francia"],
+    ["LHR","Londres, UK"],["MAN","Manchester, UK"],["EDI","Edimburgo, UK"],
+    ["DUB","Dublín, Irlanda"],["AMS","Ámsterdam, Países Bajos"],["BRU","Bruselas, Bélgica"],
+    ["FRA","Frankfurt, Alemania"],["MUC","Múnich, Alemania"],["BER","Berlín, Alemania"],
+    ["HAM","Hamburgo, Alemania"],["ZRH","Zúrich, Suiza"],["GVA","Ginebra, Suiza"],
+    ["VIE","Viena, Austria"],["PRG","Praga, Rep. Checa"],["BUD","Budapest, Hungría"],
+    ["WAW","Varsovia, Polonia"],["KRK","Cracovia, Polonia"],["ARN","Estocolmo, Suecia"],
+    ["CPH","Copenhague, Dinamarca"],["OSL","Oslo, Noruega"],["HEL","Helsinki, Finlandia"],
+    ["FCO","Roma, Italia"],["MXP","Milán, Italia"],["VCE","Venecia, Italia"],
+    ["NAP","Nápoles, Italia"],["ATH","Atenas, Grecia"],["SKG","Tesalónica, Grecia"],
+    ["IST","Estambul, Turquía"],["ADB","Izmir, Turquía"],["OTP","Bucarest, Rumanía"],
+    ["SOF","Sofía, Bulgaria"],["ZAG","Zagreb, Croacia"],["DBV","Dubrovnik, Croacia"],
+    ["──── Medio Oriente y África ────","",true],
+    ["DXB","Dubai, EAU"],["AUH","Abu Dabi, EAU"],["DOH","Doha, Qatar"],
+    ["RUH","Riad, Arabia Saudita"],["TLV","Tel Aviv, Israel"],["AMM","Amán, Jordania"],
+    ["BEY","Beirut, Líbano"],["CAI","El Cairo, Egipto"],["CMN","Casablanca, Marruecos"],
+    ["RAK","Marrakech, Marruecos"],["TUN","Túnez, Túnez"],["NBO","Nairobi, Kenia"],
+    ["JNB","Johannesburgo, Sudáfrica"],["CPT","Ciudad del Cabo, Sudáfrica"],
+    ["ADD","Adís Abeba, Etiopía"],["LOS","Lagos, Nigeria"],["ACC","Acra, Ghana"],
+    ["──── Asia y Oceanía ────","",true],
+    ["NRT","Tokio, Japón"],["OSA","Osaka, Japón"],["ICN","Seúl, Corea del Sur"],
+    ["PEK","Pekín, China"],["PVG","Shanghái, China"],["CAN","Guangzhou, China"],
+    ["HKG","Hong Kong"],["TPE","Taipei, Taiwán"],["SIN","Singapur"],
+    ["KUL","Kuala Lumpur, Malasia"],["BKK","Bangkok, Tailandia"],["HKT","Phuket, Tailandia"],
+    ["CGK","Yakarta, Indonesia"],["DPS","Bali, Indonesia"],["MNL","Manila, Filipinas"],
+    ["SGN","Ho Chi Minh, Vietnam"],["HAN","Hanói, Vietnam"],["BOM","Bombay, India"],
+    ["DEL","Nueva Delhi, India"],["MAA","Chennai, India"],["CMB","Colombo, Sri Lanka"],
+    ["KTM","Katmandú, Nepal"],["DAC","Daca, Bangladesh"],["SYD","Sídney, Australia"],
+    ["MEL","Melbourne, Australia"],["BNE","Brisbane, Australia"],["PER","Perth, Australia"],
+    ["AKL","Auckland, Nueva Zelanda"],["CHC","Christchurch, Nueva Zelanda"],
+  ];
+
   const inp={background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"10px",padding:"11px 14px",fontSize:"14px",color:"#E8F4FF",outline:"none",width:"100%",transition:"border-color 0.2s"};
   const lbl={fontSize:"11px",fontWeight:700,color:"#4A6B8A",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:"6px",display:"block"};
 
@@ -309,10 +373,12 @@ function ExploreForm({onSearch,onBack}) {
     if (!valid) return;
     const b = parseBudget(budget, currency);
     if (!b) return;
-    onSearch({ mode:"explore", origin, budget:b, currency, departureDate:departureDate||null });
+    onSearch({ mode:"explore", origin, budget:b, currency,
+      departureDate:departureDate||null,
+      returnDate:roundTrip&&returnDate?returnDate:null });
   };
 
-  return React.createElement("div",{style:{animation:"fadeUp 0.4s ease",maxWidth:"480px",width:"100%"}},
+  return React.createElement("div",{style:{animation:"fadeUp 0.4s ease",maxWidth:"520px",width:"100%"}},
     React.createElement("button",{onClick:onBack,style:{background:"none",border:"none",color:"#4A6B8A",cursor:"pointer",fontSize:"13px",fontFamily:"inherit",marginBottom:"20px",display:"flex",alignItems:"center",gap:"6px"}},
       "← Cambiar modo de búsqueda"),
     React.createElement("div",{style:{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:"20px",padding:"28px"}},
@@ -323,21 +389,46 @@ function ExploreForm({onSearch,onBack}) {
           React.createElement("div",{style:{fontSize:"12px",color:"#4A6B8A",marginTop:"1px"}},"Dinos tu presupuesto y te mostramos el mundo"))),
       React.createElement("div",{style:{background:"rgba(0,232,150,0.04)",border:"1px solid rgba(0,232,150,0.1)",borderRadius:"10px",padding:"12px 14px",marginBottom:"22px",fontSize:"12px",color:"#7A9BB5",lineHeight:1.6}},
         "✨ Introduce tu presupuesto y descubrirás todos los destinos a los que puedes volar desde tu ciudad."),
+
+      // Tipo de viaje
+      React.createElement("div",{style:{display:"flex",gap:"8px",marginBottom:"18px"}},
+        [["Ida y vuelta",true],["Solo ida",false]].map(([l,v])=>
+          React.createElement("button",{key:l,onClick:()=>setRoundTrip(v),
+            style:{flex:1,padding:"9px",borderRadius:"10px",border:roundTrip===v?"1px solid rgba(0,232,150,0.4)":"1px solid rgba(255,255,255,0.08)",
+              background:roundTrip===v?"rgba(0,232,150,0.08)":"transparent",color:roundTrip===v?"#00E896":"#4A6B8A",
+              fontSize:"13px",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}},l))),
+
+      // Ciudad origen
       React.createElement("div",{style:{marginBottom:"14px"}},
         React.createElement("label",{style:lbl},"¿Desde qué ciudad sales?"),
         React.createElement("select",{value:origin,onChange:e=>setOrigin(e.target.value),style:{...inp,cursor:"pointer"}},
-          React.createElement("option",{value:""},"Selecciona tu ciudad"),
-          ORIGINS.map(([c,n])=>React.createElement("option",{key:c,value:c},n+" ("+c+")")))),
+          React.createElement("option",{value:""},"Selecciona tu ciudad de origen"),
+          ORIGINS.map(([code,name,isHeader])=>
+            isHeader
+              ? React.createElement("option",{key:code,disabled:true,style:{color:"#4A6B8A",fontWeight:700}},name||code)
+              : React.createElement("option",{key:code,value:code},`${name} (${code})`)
+          ))),
+
+      // Moneda
       React.createElement("div",{style:{marginBottom:"14px"}},
         React.createElement(CurrencyPicker,{value:currency,onChange:setCurrency,label:"Moneda"})),
+
+      // Presupuesto
       React.createElement("div",{style:{marginBottom:"14px"}},
         React.createElement("label",{style:lbl},"Tu presupuesto máximo"),
         React.createElement("div",{style:{position:"relative"}},
           React.createElement("span",{style:{position:"absolute",left:"14px",top:"50%",transform:"translateY(-50%)",fontSize:"13px",color:"#4A6B8A",fontWeight:600,pointerEvents:"none"}},CURRENCIES[currency]?.symbol),
-          React.createElement("input",{type:"text",placeholder:`Ej: ${currency==="COP"?"1.500.000":currency==="USD"?"400":currency==="EUR"?"350":"1.500.000"}`,value:budget,onChange:e=>setBudget(e.target.value),style:{...inp,paddingLeft:"30px"}}))),
-      React.createElement("div",{style:{marginBottom:"22px"}},
-        React.createElement("label",{style:lbl},"Fecha de viaje (opcional)"),
-        React.createElement("input",{type:"date",value:departureDate,min:minDate,onChange:e=>setDepartureDate(e.target.value),style:inp})),
+          React.createElement("input",{type:"text",placeholder:`Ej: ${currency==="COP"?"1.500.000":currency==="USD"?"400":currency==="EUR"?"350":currency==="CLP"?"400.000":"1.500.000"}`,value:budget,onChange:e=>setBudget(e.target.value),style:{...inp,paddingLeft:"30px"}}))),
+
+      // Fechas
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:roundTrip?"1fr 1fr":"1fr",gap:"12px",marginBottom:"22px"}},
+        React.createElement("div",null,
+          React.createElement("label",{style:lbl},"Fecha de ida"),
+          React.createElement("input",{type:"date",value:departureDate,min:minDate,onChange:e=>setDepartureDate(e.target.value),style:inp})),
+        roundTrip&&React.createElement("div",null,
+          React.createElement("label",{style:lbl},"Fecha de vuelta"),
+          React.createElement("input",{type:"date",value:returnDate,min:departureDate||minDate,onChange:e=>setReturnDate(e.target.value),style:inp}))),
+
       React.createElement("button",{onClick:handleSubmit,disabled:!valid,
         style:{width:"100%",padding:"14px",borderRadius:"12px",border:"none",
           background:valid?"linear-gradient(135deg,#00E896,#1C8EFF)":"rgba(255,255,255,0.05)",
