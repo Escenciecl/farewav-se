@@ -26,18 +26,36 @@
 <body><div id="root"></div>
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const fmt = n => `$${Number(n).toLocaleString("es-CO")}`;
 const fmtDate = d => d ? new Date(d+"T12:00:00").toLocaleDateString("es-CO",{day:"numeric",month:"short"}) : "";
 const todayStr = () => new Date().toISOString().split("T")[0];
 const minDate = todayStr();
 
+const CURRENCIES = {
+  "COP": { symbol:"$", name:"Peso colombiano",   locale:"es-CO", decimals:0 },
+  "USD": { symbol:"US$", name:"Dólar americano", locale:"en-US", decimals:0 },
+  "EUR": { symbol:"€",  name:"Euro",             locale:"de-DE", decimals:0 },
+  "ARS": { symbol:"$",  name:"Peso argentino",   locale:"es-AR", decimals:0 },
+  "MXN": { symbol:"$",  name:"Peso mexicano",    locale:"es-MX", decimals:0 },
+  "PEN": { symbol:"S/", name:"Sol peruano",      locale:"es-PE", decimals:2 },
+  "CLP": { symbol:"$",  name:"Peso chileno",     locale:"es-CL", decimals:0 },
+  "BRL": { symbol:"R$", name:"Real brasileño",   locale:"pt-BR", decimals:2 },
+  "GBP": { symbol:"£",  name:"Libra esterlina",  locale:"en-GB", decimals:2 },
+};
+
+function fmt(n, currency="COP") {
+  const c = CURRENCIES[currency]||CURRENCIES["COP"];
+  return `${c.symbol}${Number(n).toLocaleString(c.locale,{minimumFractionDigits:c.decimals,maximumFractionDigits:c.decimals})}`;
+}
+
 /* ── Parseo de presupuesto del texto ── */
-function parseBudget(text) {
+function parseBudget(text, currency="COP") {
   const t = text.replace(/\./g,"").replace(/,/g,".");
   const m = t.match(/[\$]?\s*(\d[\d.,]*)/);
   if (!m) return null;
   const n = parseFloat(m[1].replace(",","."));
-  if (n < 10000) return Math.round(n * 1000000); // "2.5" → 2.500.000
+  // Heurística por moneda para detectar si falta el valor completo
+  if (currency==="COP"&&n<10000) return Math.round(n*1000000);
+  if (currency==="CLP"&&n<10000) return Math.round(n*1000000);
   return Math.round(n);
 }
 
@@ -73,7 +91,7 @@ function Badge({score}) {
 }
 
 /* ── Flight Card ── */
-function FlightCard({f,maxPrice,idx,onSelect}) {
+function FlightCard({f,maxPrice,idx,currency="COP"}) {
   const [vis,setVis]=useState(false),[hov,setHov]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>setVis(true),idx*100+60);return()=>clearTimeout(t);},[]);
   const score = Math.round(100-(f.price/maxPrice)*100)+18;
@@ -106,7 +124,7 @@ function FlightCard({f,maxPrice,idx,onSelect}) {
             React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A",marginTop:"2px",fontWeight:600}},f.to)))),
       React.createElement("div",{style:{textAlign:"right"}},
         React.createElement("div",{style:{marginBottom:"4px",display:"flex",justifyContent:"flex-end"}},React.createElement(Badge,{score})),
-        React.createElement("div",{style:{fontSize:"22px",fontWeight:800,color:score>=65?"#00E896":"#E8F4FF",letterSpacing:"-0.04em",lineHeight:1}},fmt(f.price)),
+        React.createElement("div",{style:{fontSize:"22px",fontWeight:800,color:score>=65?"#00E896":"#E8F4FF",letterSpacing:"-0.04em",lineHeight:1}},fmt(f.price,currency)),
         React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A",marginTop:"3px"}},f.airline))),
     f.returnInfo&&React.createElement("div",{style:{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid rgba(255,255,255,0.04)",display:"flex",alignItems:"center",gap:"8px"}},
       React.createElement("span",{style:{fontSize:"10px",color:"#1C8EFF",fontWeight:700,letterSpacing:"0.04em"}},"REGRESO"),
@@ -119,7 +137,7 @@ function FlightCard({f,maxPrice,idx,onSelect}) {
 }
 
 /* ── Destination Card (explore mode) ── */
-function DestCard({d,idx,origin,onSearch}) {
+function DestCard({d,idx,origin,onSearch,currency="COP"}) {
   const [vis,setVis]=useState(false),[hov,setHov]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>setVis(true),idx*60+40);return()=>clearTimeout(t);},[]);
   const emojis={"MAD":"🇪🇸","BCN":"🇪🇸","MIA":"🇺🇸","JFK":"🇺🇸","LAX":"🇺🇸","ORD":"🇺🇸","MCO":"🇺🇸","CDG":"🇫🇷","LHR":"🇬🇧","AMS":"🇳🇱","FCO":"🇮🇹","MXP":"🇮🇹","FRA":"🇩🇪","EZE":"🇦🇷","LIM":"🇵🇪","SCL":"🇨🇱","GRU":"🇧🇷","GIG":"🇧🇷","MEX":"🇲🇽","CUN":"🇲🇽","UIO":"🇪🇨","PTY":"🇵🇦","PUJ":"🇩🇴","HAV":"🇨🇺","DXB":"🇦🇪","YYZ":"🇨🇦","NRT":"🇯🇵"};
@@ -134,16 +152,28 @@ function DestCard({d,idx,origin,onSearch}) {
     React.createElement("div",{style:{fontSize:"28px",marginBottom:"8px"}},emojis[d.code]||"✈️"),
     React.createElement("div",{style:{fontSize:"15px",fontWeight:700,color:"#E8F4FF",marginBottom:"2px"}},d.city),
     React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A",marginBottom:"10px"}},d.code),
-    React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#00E896",letterSpacing:"-0.03em"}},fmt(d.price)),
-    React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"2px"}},"desde COP"),
+    React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#00E896",letterSpacing:"-0.03em"}},fmt(d.price,currency)),
+    React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"2px"}},"desde "+currency),
     d.departureDate&&React.createElement("div",{style:{marginTop:"8px",fontSize:"11px",color:"#7A9BB5"}},fmtDate(d.departureDate)),
     hov&&React.createElement("div",{style:{position:"absolute",bottom:"14px",right:"14px",fontSize:"11px",color:"#00E896",fontWeight:600}},"Ver vuelos →"));
+}
+
+/* ── Currency Picker ── */
+function CurrencyPicker({value, onChange, label}) {
+  const lbl = {fontSize:"11px",fontWeight:700,color:"#4A6B8A",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:"6px",display:"block"};
+  const inp = {background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"10px",padding:"11px 14px",fontSize:"14px",color:"#E8F4FF",outline:"none",width:"100%",cursor:"pointer"};
+  return React.createElement("div",null,
+    label&&React.createElement("label",{style:lbl},label),
+    React.createElement("select",{value,onChange:e=>onChange(e.target.value),style:inp},
+      Object.entries(CURRENCIES).map(([code,c])=>
+        React.createElement("option",{key:code,value:code},`${c.symbol} ${code} · ${c.name}`))));
 }
 
 /* ── Search Form (Mode 1) ── */
 function SearchForm({onSearch,onBack}) {
   const [form,setForm]=useState({origin:"",destination:"",departureDate:"",returnDate:"",passengers:1,budget:""});
   const [roundTrip,setRoundTrip]=useState(true);
+  const [currency,setCurrency]=useState("COP");
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   const ORIGINS=[["BOG","Bogotá"],["MDE","Medellín"],["CLO","Cali"],["CTG","Cartagena"],["BAQ","Barranquilla"],["EZE","Buenos Aires"],["LIM","Lima"],["SCL","Santiago"],["GRU","São Paulo"],["MEX","Ciudad de México"]];
@@ -156,10 +186,10 @@ function SearchForm({onSearch,onBack}) {
 
   const handleSubmit = () => {
     if (!valid) return;
-    const budget = form.budget ? parseBudget(form.budget) : null;
+    const budget = form.budget ? parseBudget(form.budget, currency) : null;
     onSearch({ origin:form.origin, destination:form.destination, departureDate:form.departureDate,
       returnDate:roundTrip&&form.returnDate?form.returnDate:null,
-      passengers:form.passengers, budget, mode:"search" });
+      passengers:form.passengers, budget, currency, mode:"search" });
   };
 
   return React.createElement("div",{style:{animation:"fadeUp 0.4s ease",maxWidth:"560px",width:"100%"}},
@@ -202,15 +232,18 @@ function SearchForm({onSearch,onBack}) {
           React.createElement("label",{style:lbl},"Regreso"),
           React.createElement("input",{type:"date",value:form.returnDate,min:form.departureDate||minDate,onChange:e=>set("returnDate",e.target.value),style:inp}))),
 
-      // Pasajeros / Presupuesto
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"22px"}},
+      // Pasajeros / Moneda / Presupuesto
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"14px"}},
         React.createElement("div",null,
           React.createElement("label",{style:lbl},"Pasajeros"),
           React.createElement("select",{value:form.passengers,onChange:e=>set("passengers",parseInt(e.target.value)),style:{...inp,cursor:"pointer"}},
             [1,2,3,4,5,6].map(n=>React.createElement("option",{key:n,value:n},n===1?"1 pasajero":n+" pasajeros")))),
-        React.createElement("div",null,
-          React.createElement("label",{style:lbl},"Presupuesto máximo (opcional)"),
-          React.createElement("input",{type:"text",placeholder:"Ej: $2.500.000",value:form.budget,onChange:e=>set("budget",e.target.value),style:inp}))),
+        React.createElement(CurrencyPicker,{value:currency,onChange:setCurrency,label:"Moneda"})),
+      React.createElement("div",{style:{marginBottom:"22px"}},
+        React.createElement("label",{style:lbl},"Presupuesto máximo (opcional)"),
+        React.createElement("div",{style:{position:"relative"}},
+          React.createElement("span",{style:{position:"absolute",left:"14px",top:"50%",transform:"translateY(-50%)",fontSize:"13px",color:"#4A6B8A",fontWeight:600,pointerEvents:"none"}},CURRENCIES[currency]?.symbol),
+          React.createElement("input",{type:"text",placeholder:`Ej: ${currency==="COP"?"2.500.000":currency==="USD"?"600":currency==="EUR"?"550":"2.500.000"}`,value:form.budget,onChange:e=>set("budget",e.target.value),style:{...inp,paddingLeft:"30px"}}))),
 
       React.createElement("button",{onClick:handleSubmit,disabled:!valid,
         style:{width:"100%",padding:"14px",borderRadius:"12px",border:"none",
@@ -225,6 +258,7 @@ function ExploreForm({onSearch,onBack}) {
   const [origin,setOrigin]=useState("");
   const [budget,setBudget]=useState("");
   const [departureDate,setDepartureDate]=useState("");
+  const [currency,setCurrency]=useState("COP");
 
   const ORIGINS=[["BOG","Bogotá"],["MDE","Medellín"],["CLO","Cali"],["CTG","Cartagena"],["BAQ","Barranquilla"],["EZE","Buenos Aires"],["LIM","Lima"],["SCL","Santiago"],["GRU","São Paulo"],["MEX","Ciudad de México"]];
   const inp={background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"10px",padding:"11px 14px",fontSize:"14px",color:"#E8F4FF",outline:"none",width:"100%",transition:"border-color 0.2s"};
@@ -233,9 +267,9 @@ function ExploreForm({onSearch,onBack}) {
   const valid = origin && budget;
   const handleSubmit = () => {
     if (!valid) return;
-    const b = parseBudget(budget);
+    const b = parseBudget(budget, currency);
     if (!b) return;
-    onSearch({ mode:"explore", origin, budget:b, departureDate:departureDate||null });
+    onSearch({ mode:"explore", origin, budget:b, currency, departureDate:departureDate||null });
   };
 
   return React.createElement("div",{style:{animation:"fadeUp 0.4s ease",maxWidth:"480px",width:"100%"}},
@@ -255,10 +289,14 @@ function ExploreForm({onSearch,onBack}) {
           React.createElement("option",{value:""},"Selecciona tu ciudad"),
           ORIGINS.map(([c,n])=>React.createElement("option",{key:c,value:c},n+" ("+c+")")))),
       React.createElement("div",{style:{marginBottom:"14px"}},
-        React.createElement("label",{style:lbl},"Tu presupuesto máximo (COP)"),
-        React.createElement("input",{type:"text",placeholder:"Ej: $1.500.000 o 1500000",value:budget,onChange:e=>setBudget(e.target.value),style:inp})),
+        React.createElement(CurrencyPicker,{value:currency,onChange:setCurrency,label:"Moneda"})),
+      React.createElement("div",{style:{marginBottom:"14px"}},
+        React.createElement("label",{style:lbl},"Tu presupuesto máximo"),
+        React.createElement("div",{style:{position:"relative"}},
+          React.createElement("span",{style:{position:"absolute",left:"14px",top:"50%",transform:"translateY(-50%)",fontSize:"13px",color:"#4A6B8A",fontWeight:600,pointerEvents:"none"}},CURRENCIES[currency]?.symbol),
+          React.createElement("input",{type:"text",placeholder:`Ej: ${currency==="COP"?"1.500.000":currency==="USD"?"400":currency==="EUR"?"350":"1.500.000"}`,value:budget,onChange:e=>setBudget(e.target.value),style:{...inp,paddingLeft:"30px"}}))),
       React.createElement("div",{style:{marginBottom:"22px"}},
-        React.createElement("label",{style:lbl},"Mes de viaje (opcional)"),
+        React.createElement("label",{style:lbl},"Fecha de viaje (opcional)"),
         React.createElement("input",{type:"date",value:departureDate,min:minDate,onChange:e=>setDepartureDate(e.target.value),style:inp})),
       React.createElement("button",{onClick:handleSubmit,disabled:!valid,
         style:{width:"100%",padding:"14px",borderRadius:"12px",border:"none",
@@ -269,7 +307,7 @@ function ExploreForm({onSearch,onBack}) {
 }
 
 /* ── Smart Route Card ── */
-function SmartRouteCard({route,idx}) {
+function SmartRouteCard({route,idx,currency="COP"}) {
   const [vis,setVis]=useState(false),[open,setOpen]=useState(false),[hov,setHov]=useState(false);
   useEffect(()=>{const t=setTimeout(()=>setVis(true),idx*120+60);return()=>clearTimeout(t);},[]);
   return React.createElement("div",{
@@ -294,7 +332,7 @@ function SmartRouteCard({route,idx}) {
             React.createElement("span",{style:{fontSize:"13px",color:"#B8D4E8",fontWeight:600}},route.leg2.to)),
           React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A"}},"⏱ ",route.totalDuration," total · ",route.layoverHours,"h en ",route.hubCity))),
       React.createElement("div",{style:{textAlign:"right",flexShrink:0}},
-        React.createElement("div",{style:{fontSize:"22px",fontWeight:800,color:"#FFD700",letterSpacing:"-0.04em",lineHeight:1}},fmt(route.price)),
+        React.createElement("div",{style:{fontSize:"22px",fontWeight:800,color:"#FFD700",letterSpacing:"-0.04em",lineHeight:1}},fmt(route.price,currency)),
         React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"2px"}},"total COP"),
         React.createElement("div",{style:{fontSize:"11px",color:open?"#4A6B8A":"#FFD700",marginTop:"6px",fontWeight:600}},open?"▲ cerrar":"▼ ver tramos"))),
     // Expandido
@@ -313,7 +351,7 @@ function SmartRouteCard({route,idx}) {
               React.createElement("div",{style:{textAlign:"center"}},
                 React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#E8F4FF"}},leg.arrival),
                 React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A"}},leg.to))),
-            React.createElement("div",{style:{fontSize:"16px",fontWeight:700,color:"#FFD700"}},"→ ",fmt(leg.price))))),
+            React.createElement("div",{style:{fontSize:"16px",fontWeight:700,color:"#FFD700"}},"→ ",fmt(leg.price,currency))))),
       React.createElement("div",{style:{marginTop:"12px",background:"rgba(255,200,0,0.04)",border:"1px solid rgba(255,200,0,0.1)",borderRadius:"10px",padding:"10px 14px",fontSize:"12px",color:"#7A9BB5",lineHeight:1.6}},
         "⚠️ ",React.createElement("strong",{style:{color:"#B8D4E8"}},"Importante:")," estos son 2 tickets independientes. Si pierdes la conexión en ",route.hubCity," la aerolínea no está obligada a reembarcarte. Recomendamos al menos ",Math.max(route.layoverHours,3),"h de margen.")));
 }
@@ -321,6 +359,7 @@ function SmartRouteCard({route,idx}) {
 /* ── Results: Search Mode ── */
 function SearchResults({data,onNew}) {
   const [sort,setSort]=useState("best");
+  const currency = data.currency||"COP";
   const maxP = data.flights?.length ? Math.max(...data.flights.map(f=>f.price)) : 1;
   const sorted = [...(data.flights||[])].sort((a,b)=>sort==="price"?a.price-b.price:sort==="fast"?a.duration.localeCompare(b.duration):(b.best?1:0)-(a.best?1:0));
   const directs = data.flights?.filter(f=>f.stops===0).length||0;
@@ -338,9 +377,9 @@ function SearchResults({data,onNew}) {
     // Chips resumen
     React.createElement("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"20px"}},
       cheapest>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(0,232,150,0.06)",border:"1px solid rgba(0,232,150,0.15)",borderRadius:"10px",padding:"6px 12px"}},
-        "📉 ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#00E896"}},"Vuelo normal desde ",fmt(cheapest))),
+        "📉 ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#00E896"}},"Vuelo normal desde ",fmt(cheapest,currency))),
       saving>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(255,200,0,0.06)",border:"1px solid rgba(255,200,0,0.2)",borderRadius:"10px",padding:"6px 12px"}},
-        "✨ ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#FFD700"}},"Ruta inteligente ahorra ",fmt(saving))),
+        "✨ ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#FFD700"}},"Ruta inteligente ahorra ",fmt(saving,currency))),
       directs>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(28,142,255,0.06)",border:"1px solid rgba(28,142,255,0.15)",borderRadius:"10px",padding:"6px 12px"}},
         "⚡ ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#1C8EFF"}},directs," directo",directs>1?"s":""))),
 
@@ -354,7 +393,7 @@ function SearchResults({data,onNew}) {
               border:sort===k?"1px solid rgba(0,232,150,0.4)":"1px solid rgba(255,255,255,0.08)",
               background:sort===k?"rgba(0,232,150,0.1)":"transparent",color:sort===k?"#00E896":"#4A6B8A"}},l))),
       React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"24px"}},
-        sorted.map((f,i)=>React.createElement(FlightCard,{key:i,f,maxPrice:maxP,idx:i})))),
+        sorted.map((f,i)=>React.createElement(FlightCard,{key:i,f,maxPrice:maxP,idx:i,currency})))),
 
     // Rutas Inteligentes
     hasSmart&&React.createElement("div",null,
@@ -363,7 +402,7 @@ function SearchResults({data,onNew}) {
         React.createElement("div",{style:{flex:1,height:"1px",background:"rgba(255,200,0,0.1)"}}),
         React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A"}},"Tickets separados · Mayor ahorro")),
       React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:"10px"}},
-        data.smartRoutes.map((r,i)=>React.createElement(SmartRouteCard,{key:i,route:r,idx:i})))),
+        data.smartRoutes.map((r,i)=>React.createElement(SmartRouteCard,{key:i,route:r,idx:i,currency})))),
 
     React.createElement("button",{onClick:onNew,
       style:{marginTop:"24px",padding:"10px 20px",borderRadius:"100px",background:"none",border:"1px solid rgba(255,255,255,0.1)",color:"#4A6B8A",fontSize:"13px",cursor:"pointer",fontFamily:"inherit",fontWeight:500}},
@@ -382,8 +421,8 @@ function ExploreResults({data,onSearch,onNew}) {
       React.createElement("div",{style:{fontSize:"12px",color:"#4A6B8A",marginBottom:"14px"}},
         "Clic en un destino para ver los vuelos disponibles 👇"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:"10px"}},
-        data.destinations.map((d,i)=>React.createElement(DestCard,{key:d.code,d,idx:i,origin:data.origin,
-          onSearch:params=>onSearch({...params,budget:data.budget,mode:"search"})})))),
+        data.destinations.map((d,i)=>React.createElement(DestCard,{key:d.code,d,idx:i,origin:data.origin,currency:data.currency||"COP",
+          onSearch:params=>onSearch({...params,budget:data.budget,currency:data.currency||"COP",mode:"search"})})))),
     React.createElement("button",{onClick:onNew,
       style:{marginTop:"20px",padding:"10px 20px",borderRadius:"100px",background:"none",border:"1px solid rgba(255,255,255,0.1)",color:"#4A6B8A",fontSize:"13px",cursor:"pointer",fontFamily:"inherit",fontWeight:500}},
       "← Nueva búsqueda"));
