@@ -1,5 +1,5 @@
 // ─── Farewave 2.0 · Netlify Function ───────────────────────
-// Dos modos: búsqueda normal + exploración por presupuesto
+// Incluye algoritmo de Ruta Inteligente (vuelos partidos)
 // ───────────────────────────────────────────────────────────
 
 const https = require("https");
@@ -15,8 +15,9 @@ const AIRLINE_NAMES = {
   "AV":"Avianca","LA":"LATAM","CM":"Copa Airlines","IB":"Iberia",
   "AA":"American Airlines","DL":"Delta","UA":"United","BA":"British Airways",
   "AF":"Air France","KL":"KLM","LH":"Lufthansa","UX":"Air Europa",
-  "VY":"Vueling","FR":"Ryanair","U2":"easyJet","PU":"Plus Ultra",
-  "JJ":"LATAM Brasil","G3":"Gol","AD":"Azul","2Z":"Voepass",
+  "VY":"Vueling","PU":"Plus Ultra","JJ":"LATAM Brasil","G3":"Gol",
+  "AD":"Azul","AM":"Aeroméxico","AC":"Air Canada","QR":"Qatar Airways",
+  "EK":"Emirates","TK":"Turkish Airlines","JL":"Japan Airlines","NH":"ANA",
 };
 
 const CITY_NAMES = {
@@ -25,16 +26,45 @@ const CITY_NAMES = {
   "LHR":"Londres","AMS":"Ámsterdam","FCO":"Roma","MXP":"Milán",
   "FRA":"Frankfurt","EZE":"Buenos Aires","LIM":"Lima","SCL":"Santiago",
   "GRU":"São Paulo","GIG":"Río de Janeiro","MEX":"Ciudad de México",
-  "CUN":"Cancún","GDL":"Guadalajara","MTY":"Monterrey","BOG":"Bogotá",
-  "MDE":"Medellín","CLO":"Cali","CTG":"Cartagena","UIO":"Quito",
-  "PTY":"Panamá","SJO":"San José","PUJ":"Punta Cana","HAV":"La Habana",
-  "SDQ":"Santo Domingo","DXB":"Dubai","YYZ":"Toronto","NRT":"Tokio",
+  "CUN":"Cancún","BOG":"Bogotá","MDE":"Medellín","CLO":"Cali",
+  "UIO":"Quito","PTY":"Panamá","PUJ":"Punta Cana","HAV":"La Habana",
+  "DXB":"Dubai","DOH":"Doha","YYZ":"Toronto","NRT":"Tokio",
+  "ICN":"Seúl","SIN":"Singapur","BKK":"Bangkok","SYD":"Sídney",
+  "HKG":"Hong Kong","PEK":"Pekín","PVG":"Shanghai",
 };
 
+// Hubs estratégicos por región — los que más vuelos conectan
+const HUBS = {
+  "americas": ["BOG","MIA","JFK","LAX","GRU","PTY","MEX","LIM","EZE","SCL"],
+  "europe":   ["MAD","LHR","CDG","AMS","FRA","FCO","LIS","BCN"],
+  "asia":     ["DXB","DOH","ICN","NRT","SIN","BKK","HKG","IST"],
+  "all":      ["BOG","MIA","JFK","LAX","GRU","PTY","MEX","MAD","LHR","CDG","AMS","FRA","DXB","DOH","ICN","NRT","LIM","EZE"],
+};
+
+function getHubsForRoute(origin, destination) {
+  // Detectar región destino para elegir hubs relevantes
+  const asianDests = ["NRT","ICN","SIN","BKK","HKG","PEK","PVG","SYD","KUL","MNL","DEL","BOM"];
+  const europeanDests = ["MAD","LHR","CDG","AMS","FRA","FCO","MXP","BCN","LIS","VIE","ZRH","CPH","ARN"];
+  const northAmDests = ["JFK","LAX","MIA","ORD","MCO","SFO","LAS","SEA","ATL","DFW","YYZ","YVR"];
+
+  if (asianDests.includes(destination)) {
+    return [...HUBS.americas.filter(h=>h!==origin), ...HUBS.asia.filter(h=>h!==destination), ...HUBS.europe].slice(0,12);
+  }
+  if (europeanDests.includes(destination)) {
+    return [...HUBS.americas.filter(h=>h!==origin), ...HUBS.europe.filter(h=>h!==destination)].slice(0,10);
+  }
+  if (northAmDests.includes(destination)) {
+    return [...HUBS.americas.filter(h=>h!==origin&&h!==destination)].slice(0,8);
+  }
+  return HUBS.all.filter(h=>h!==origin&&h!==destination).slice(0,10);
+}
+
+// ── HTTPS helpers ──────────────────────────────────────────
 function httpsPost(path, body) {
   return new Promise((resolve, reject) => {
-    const req = https.request({ hostname:BASE, path, method:"POST",
-      headers:{ "Content-Type":"application/x-www-form-urlencoded", "Content-Length":Buffer.byteLength(body) }
+    const req = https.request({
+      hostname:BASE, path, method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded","Content-Length":Buffer.byteLength(body)}
     }, res => { let d=""; res.on("data",c=>d+=c); res.on("end",()=>{ try{resolve(JSON.parse(d))}catch(e){reject(e)} }); });
     req.on("error",reject); req.write(body); req.end();
   });
@@ -42,8 +72,9 @@ function httpsPost(path, body) {
 
 function httpsGet(path, token) {
   return new Promise((resolve, reject) => {
-    const req = https.request({ hostname:BASE, path, method:"GET",
-      headers:{ Authorization:`Bearer ${token}` }
+    const req = https.request({
+      hostname:BASE, path, method:"GET",
+      headers:{Authorization:`Bearer ${token}`}
     }, res => { let d=""; res.on("data",c=>d+=c); res.on("end",()=>{ try{resolve(JSON.parse(d))}catch(e){reject(e)} }); });
     req.on("error",reject); req.end();
   });
@@ -51,7 +82,7 @@ function httpsGet(path, token) {
 
 async function getToken() {
   if (tokenCache.value && Date.now() < tokenCache.expiresAt) return tokenCache.value;
-  const body = querystring.stringify({ grant_type:"client_credentials", client_id:KEY, client_secret:SECRET });
+  const body = querystring.stringify({grant_type:"client_credentials",client_id:KEY,client_secret:SECRET});
   const data = await httpsPost("/v1/security/oauth2/token", body);
   tokenCache = { value:data.access_token, expiresAt:Date.now()+data.expires_in*1000-60000 };
   return data.access_token;
@@ -59,148 +90,182 @@ async function getToken() {
 
 function formatDuration(iso) {
   const m = iso.match(/PT(\d+H)?(\d+M)?/);
-  const h = m?.[1]?parseInt(m[1]):0, min = m?.[2]?parseInt(m[2]):0;
+  const h = m?.[1]?parseInt(m[1]):0, min=m?.[2]?parseInt(m[2]):0;
   return `${h}h${min>0?min+"m":""}`;
 }
 
-// ── Modo 1: Búsqueda personalizada ────────────────────────
-async function searchFlights({ origin, destination, departureDate, returnDate, passengers, budget }) {
-  const token = await getToken();
-  const params = querystring.stringify({
-    originLocationCode: origin, destinationLocationCode: destination,
-    departureDate, ...(returnDate ? { returnDate } : {}),
-    adults: passengers || 1, max: 6, currencyCode: "COP",
-  });
+function addDurations(d1, d2) {
+  const parse = d => { const m=d.match(/(\d+)h(\d+)?m?/); return (parseInt(m?.[1]||0)*60)+(parseInt(m?.[2]||0)); };
+  const total = parse(d1)+parse(d2);
+  return `${Math.floor(total/60)}h${total%60>0?total%60+"m":""}`;
+}
 
-  const result = await httpsGet(`/v2/shopping/flight-offers?${params}`, token);
-  const offers = result.data || [];
+// ── Buscar un tramo con manejo de errores ──────────────────
+async function searchLeg(origin, destination, date, passengers, token) {
+  try {
+    const params = querystring.stringify({
+      originLocationCode:origin, destinationLocationCode:destination,
+      departureDate:date, adults:passengers, max:2, currencyCode:"COP",
+    });
+    const r = await httpsGet(`/v2/shopping/flight-offers?${params}`, token);
+    return r.data || [];
+  } catch(e) { return []; }
+}
 
-  if (!offers.length) return {
-    summary: `No encontré vuelos de ${origin} a ${destination} para esas fechas. Intenta con otras fechas.`,
-    flights: [], mode: "search"
-  };
-
-  const prices = offers.map(o => parseFloat(o.price.total));
-  const minPrice = Math.min(...prices);
-
-  // Filtrar por presupuesto si se especificó
-  const filtered = budget
-    ? offers.filter(o => parseFloat(o.price.total) <= budget)
-    : offers;
-
-  const toUse = (filtered.length ? filtered : offers).slice(0, 4);
-
-  const flights = toUse.map(offer => {
-    const itin = offer.itineraries;
-    const seg0 = itin[0].segments;
-    const first = seg0[0], last = seg0[seg0.length-1];
-    const price = Math.round(parseFloat(offer.price.total));
-    const stops = seg0.length - 1;
-    let connectionInfo = null;
-    if (stops > 0) {
-      const city = seg0[0].arrival.iataCode;
-      const wait = seg0[1]?.departure.at ? Math.round((new Date(seg0[1].departure.at)-new Date(seg0[0].arrival.at))/3600000)+"h espera" : "";
-      connectionInfo = `${city}${wait?" ("+wait+")":""}`;
-    }
-    // Vuelo de regreso
-    let returnInfo = null;
-    if (itin[1]) {
-      const seg1 = itin[1].segments;
-      returnInfo = {
-        departure: seg1[0].departure.at.slice(11,16),
-        arrival: seg1[seg1.length-1].arrival.at.slice(11,16),
-        duration: formatDuration(itin[1].duration),
-        stops: seg1.length - 1,
-      };
-    }
-    const airline = offer.validatingAirlineCodes?.[0] || first.carrierCode;
-    return {
-      airline: AIRLINE_NAMES[airline] || airline,
-      from: first.departure.iataCode, to: last.arrival.iataCode,
-      departure: first.departure.at.slice(11,16), arrival: last.arrival.at.slice(11,16),
-      departureDate: first.departure.at.slice(0,10),
-      duration: formatDuration(itin[0].duration),
-      stops, connectionInfo, returnInfo, price,
-      best: price === Math.round(minPrice),
-    };
-  });
-
-  const lowestFmt = `$${Math.round(Math.min(...flights.map(f=>f.price))).toLocaleString("es-CO")}`;
-  const directs = flights.filter(f=>f.stops===0).length;
-  const withinBudget = budget ? flights.filter(f=>f.price<=budget).length : flights.length;
-
+// ── Convertir oferta Amadeus a nuestro formato ─────────────
+function parseOffer(offer, label) {
+  const itin = offer.itineraries[0];
+  const seg  = itin.segments;
+  const first= seg[0], last=seg[seg.length-1];
+  const price= Math.round(parseFloat(offer.price.total));
+  const stops= seg.length-1;
+  let connectionInfo=null;
+  if (stops>0) {
+    const city=seg[0].arrival.iataCode;
+    const wait=seg[1]?.departure.at?Math.round((new Date(seg[1].departure.at)-new Date(seg[0].arrival.at))/3600000)+"h espera":"";
+    connectionInfo=`${city}${wait?" ("+wait+")":""}`;
+  }
+  const airlineCode = offer.validatingAirlineCodes?.[0]||first.carrierCode;
   return {
-    summary: budget && filtered.length === 0
-      ? `No encontré vuelos de ${origin} a ${destination} dentro de tu presupuesto de $${budget.toLocaleString("es-CO")} COP. Te muestro las opciones más económicas disponibles.`
-      : `Encontré ${flights.length} vuelo${flights.length>1?"s":""} de ${origin} a ${destination}${returnDate?" (ida y vuelta)":""}. El más económico desde ${lowestFmt} COP${directs>0?", con "+directs+" directo"+(directs>1?"s":""):"."}.`,
-    flights, mode: "search",
+    airline: AIRLINE_NAMES[airlineCode]||airlineCode,
+    from: first.departure.iataCode, to: last.arrival.iataCode,
+    departure: first.departure.at.slice(11,16), arrival: last.arrival.at.slice(11,16),
+    departureDate: first.departure.at.slice(0,10),
+    duration: formatDuration(itin.duration),
+    stops, connectionInfo, price,
+    label: label||null, best:false,
   };
 }
 
-// ── Modo 2: Exploración por presupuesto ───────────────────
-async function exploreByBudget({ origin, budget, departureDate, oneWay }) {
+// ── Modo 1: Búsqueda con Ruta Inteligente ─────────────────
+async function searchFlights({ origin, destination, departureDate, returnDate, passengers, budget, smartRoute }) {
   const token = await getToken();
+  const pax = passengers||1;
 
-  // Convertir COP a USD aproximado para Amadeus (tasa ~4000 COP/USD)
-  const budgetUSD = Math.round(budget / 4000);
+  // 1. Buscar vuelo directo
+  const directOffers = await searchLeg(origin, destination, departureDate, pax, token);
 
-  const params = querystring.stringify({
-    origin, maxPrice: budgetUSD,
-    ...(departureDate ? { departureDate } : {}),
-    ...(oneWay ? { oneWay: true } : {}),
-    currency: "USD", viewBy: "DESTINATION",
+  // 2. Si smartRoute activo, buscar rutas partidas en paralelo
+  let smartRoutes = [];
+  if (smartRoute !== false) {
+    const hubs = getHubsForRoute(origin, destination);
+    const routePromises = hubs.map(async hub => {
+      try {
+        const [leg1Offers, leg2Offers] = await Promise.all([
+          searchLeg(origin, hub, departureDate, pax, token),
+          searchLeg(hub, destination, departureDate, pax, token),
+        ]);
+        if (!leg1Offers.length || !leg2Offers.length) return null;
+        const leg1 = leg1Offers[0], leg2 = leg2Offers[0];
+        const price1 = parseFloat(leg1.price.total);
+        const price2 = parseFloat(leg2.price.total);
+        const totalPrice = Math.round(price1 + price2);
+
+        // Verificar que haya tiempo suficiente entre vuelos (mínimo 3h)
+        const arr1 = new Date(leg1.itineraries[0].segments[leg1.itineraries[0].segments.length-1].arrival.at);
+        const dep2 = new Date(leg2.itineraries[0].segments[0].departure.at);
+        const layoverHours = (dep2-arr1)/3600000;
+        if (layoverHours < 2 || layoverHours > 48) return null;
+
+        const f1 = parseOffer(leg1, "Tramo 1");
+        const f2 = parseOffer(leg2, "Tramo 2");
+
+        return {
+          hub, hubCity: CITY_NAMES[hub]||hub,
+          price: totalPrice,
+          leg1: f1, leg2: f2,
+          totalDuration: addDurations(f1.duration, f2.duration),
+          layoverHours: Math.round(layoverHours*10)/10,
+          tickets: 2,
+          isSmartRoute: true,
+        };
+      } catch(e) { return null; }
+    });
+
+    const results = await Promise.allSettled(routePromises);
+    smartRoutes = results
+      .filter(r => r.status==="fulfilled" && r.value)
+      .map(r => r.value)
+      .sort((a,b) => a.price-b.price)
+      .slice(0, 3);
+  }
+
+  if (!directOffers.length && !smartRoutes.length) {
+    return { summary:`No encontré vuelos de ${origin} a ${destination} para esas fechas.`, flights:[], smartRoutes:[], mode:"search" };
+  }
+
+  // Procesar vuelos directos
+  const prices = directOffers.map(o=>parseFloat(o.price.total));
+  const minPrice = Math.min(...prices);
+  const filtered = budget ? directOffers.filter(o=>parseFloat(o.price.total)<=budget) : directOffers;
+  const toUse = (filtered.length?filtered:directOffers).slice(0,4);
+  const flights = toUse.map(offer => {
+    const f = parseOffer(offer, null);
+    f.best = f.price===Math.round(minPrice);
+    return f;
   });
 
+  // Marcar si la ruta inteligente es más barata que el directo
+  const directMin = flights.length ? Math.min(...flights.map(f=>f.price)) : Infinity;
+  const smartMin  = smartRoutes.length ? smartRoutes[0].price : Infinity;
+  const saving    = directMin - smartMin;
+
+  let summary = "";
+  if (flights.length) {
+    summary = `Encontré ${flights.length} vuelo${flights.length>1?"s":""} de ${origin} a ${destination}. El más económico desde $${Math.round(directMin).toLocaleString("es-CO")} COP`;
+    if (saving>0 && smartRoutes.length) {
+      summary += `. ✨ También encontré una Ruta Inteligente que ahorra $${saving.toLocaleString("es-CO")} COP viajando via ${smartRoutes[0].hubCity}.`;
+    } else if (!flights.length && smartRoutes.length) {
+      summary = `No hay vuelos directos pero encontré una Ruta Inteligente via ${smartRoutes[0].hubCity} por $${smartMin.toLocaleString("es-CO")} COP.`;
+    } else {
+      summary += ".";
+    }
+  } else if (smartRoutes.length) {
+    summary = `No encontré vuelo directo de ${origin} a ${destination} pero hay una Ruta Inteligente via ${smartRoutes[0].hubCity} por $${smartMin.toLocaleString("es-CO")} COP.`;
+  }
+
+  return { summary, flights, smartRoutes, directMin, smartMin, saving: saving>0?saving:0, mode:"search" };
+}
+
+// ── Modo 2: Exploración por presupuesto ───────────────────
+async function exploreByBudget({ origin, budget, departureDate }) {
+  const token = await getToken();
+  const budgetUSD = Math.round(budget/4000);
+  const params = querystring.stringify({
+    origin, maxPrice:budgetUSD,
+    ...(departureDate?{departureDate}:{}),
+    currency:"USD", viewBy:"DESTINATION",
+  });
   const result = await httpsGet(`/v1/shopping/flight-destinations?${params}`, token);
-  const data = result.data || [];
-
-  if (!data.length) return {
-    summary: `No encontré destinos disponibles desde ${origin} con ese presupuesto. Intenta aumentando un poco el presupuesto.`,
-    destinations: [], mode: "explore"
-  };
-
-  const destinations = data.slice(0, 12).map(d => {
-    const priceCOP = Math.round(d.price.total * 4000);
-    return {
-      code: d.destination,
-      city: CITY_NAMES[d.destination] || d.destination,
-      price: priceCOP,
-      departureDate: d.departureDate,
-      returnDate: d.returnDate,
-      airline: d.links?.flightOffers ? "Ver vuelos" : null,
-    };
-  }).sort((a,b) => a.price - b.price);
-
-  const cheapest = destinations[0];
+  const data = result.data||[];
+  if (!data.length) return { summary:`No encontré destinos con ese presupuesto desde ${origin}. Intenta aumentando un poco.`, destinations:[], mode:"explore" };
+  const destinations = data.slice(0,12).map(d=>({
+    code:d.destination, city:CITY_NAMES[d.destination]||d.destination,
+    price:Math.round(d.price.total*4000),
+    departureDate:d.departureDate, returnDate:d.returnDate,
+  })).sort((a,b)=>a.price-b.price);
+  const cheapest=destinations[0];
   return {
-    summary: `Con $${budget.toLocaleString("es-CO")} COP desde ${origin} puedes llegar a ${destinations.length} destinos. El más económico es ${cheapest.city} desde $${cheapest.price.toLocaleString("es-CO")} COP.`,
-    destinations, mode: "explore",
-    origin, budget,
+    summary:`Con $${budget.toLocaleString("es-CO")} COP desde ${CITY_NAMES[origin]||origin} puedes volar a ${destinations.length} destinos. El más económico es ${cheapest.city} desde $${cheapest.price.toLocaleString("es-CO")} COP.`,
+    destinations, mode:"explore", origin, budget,
   };
 }
 
 // ── Handler ────────────────────────────────────────────────
 exports.handler = async (event) => {
   const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin":"*",
+    "Access-Control-Allow-Headers":"Content-Type",
+    "Content-Type":"application/json",
   };
-  if (event.httpMethod === "OPTIONS") return { statusCode:200, headers, body:"" };
-  if (event.httpMethod !== "POST") return { statusCode:405, headers, body:JSON.stringify({error:"Método no permitido"}) };
-
+  if (event.httpMethod==="OPTIONS") return {statusCode:200,headers,body:""};
+  if (event.httpMethod!=="POST")    return {statusCode:405,headers,body:JSON.stringify({error:"Método no permitido"})};
   try {
-    const body = JSON.parse(event.body || "{}");
-
-    if (body.mode === "explore") {
-      const result = await exploreByBudget(body);
-      return { statusCode:200, headers, body:JSON.stringify(result) };
-    } else {
-      const result = await searchFlights(body);
-      return { statusCode:200, headers, body:JSON.stringify(result) };
-    }
+    const body = JSON.parse(event.body||"{}");
+    const result = body.mode==="explore" ? await exploreByBudget(body) : await searchFlights(body);
+    return {statusCode:200,headers,body:JSON.stringify(result)};
   } catch(err) {
     console.error(err);
-    return { statusCode:500, headers, body:JSON.stringify({ error:"Error conectando con Amadeus. Verifica tus credenciales." }) };
+    return {statusCode:500,headers,body:JSON.stringify({error:"Error conectando con Amadeus."})};
   }
 };
