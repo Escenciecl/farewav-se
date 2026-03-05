@@ -228,29 +228,69 @@ async function searchFlights({ origin, destination, departureDate, returnDate, p
 }
 
 // ── Modo 2: Exploración por presupuesto ───────────────────
+// ── Modo 2: Exploración por presupuesto (búsquedas reales en paralelo) ──
 async function exploreByBudget({ origin, budget, departureDate, currency="COP" }) {
   const token = await getToken();
-  // Tasas aproximadas a USD
+
+  // Fecha por defecto: 30 días desde hoy
+  const date = departureDate || (() => {
+    const d = new Date(); d.setDate(d.getDate()+30);
+    return d.toISOString().split("T")[0];
+  })();
+
+  // Destinos populares a explorar (excluimos el origen)
+  const POPULAR = ["MAD","MIA","JFK","LAX","CDG","LHR","CUN","MEX","PTY","BOG",
+    "MDE","EZE","LIM","GRU","SCL","BCN","AMS","FRA","FCO","MCO","ORD","DXB",
+    "NRT","ICN","SIN","YYZ","PUJ","HAV","SDQ","UIO","CTG","BAQ"];
+
+  const targets = POPULAR.filter(d => d !== origin);
+
+  // Buscar en paralelo (máx 20 a la vez)
+  const results = await Promise.allSettled(
+    targets.slice(0,20).map(async dest => {
+      try {
+        const params = querystring.stringify({
+          originLocationCode: origin,
+          destinationLocationCode: dest,
+          departureDate: date,
+          adults: 1,
+          max: 1,
+          currencyCode: currency,
+        });
+        const r = await httpsGet(`/v2/shopping/flight-offers?${params}`, token);
+        const offer = r.data?.[0];
+        if (!offer) return null;
+        const price = Math.round(parseFloat(offer.price.total));
+        if (price > budget) return null;
+        const seg = offer.itineraries[0].segments;
+        return {
+          code: dest,
+          city: CITY_NAMES[dest] || dest,
+          price,
+          departureDate: date,
+          stops: seg.length - 1,
+          duration: formatDuration(offer.itineraries[0].duration),
+        };
+      } catch(e) { return null; }
+    })
+  );
+
+  const destinations = results
+    .filter(r => r.status==="fulfilled" && r.value)
+    .map(r => r.value)
+    .sort((a,b) => a.price - b.price);
+
   const rates = { COP:4000, USD:1, EUR:0.92, ARS:900, MXN:17, PEN:3.7, CLP:950, BRL:5, GBP:0.79 };
-  const rate = rates[currency]||4000;
-  const budgetUSD = Math.round(budget/rate);
-  const params = querystring.stringify({
-    origin, maxPrice:budgetUSD,
-    ...(departureDate?{departureDate}:{}),
-    currency:"USD", viewBy:"DESTINATION",
-  });
-  const result = await httpsGet(`/v1/shopping/flight-destinations?${params}`, token);
-  const data = result.data||[];
-  if (!data.length) return { summary:`No encontré destinos con ese presupuesto desde ${origin}. Intenta aumentando un poco.`, destinations:[], mode:"explore", currency };
-  const destinations = data.slice(0,12).map(d=>({
-    code:d.destination, city:CITY_NAMES[d.destination]||d.destination,
-    price:Math.round(d.price.total*rate),
-    departureDate:d.departureDate, returnDate:d.returnDate,
-  })).sort((a,b)=>a.price-b.price);
-  const cheapest=destinations[0];
-  const sym = {COP:"$",USD:"US$",EUR:"€",ARS:"$",MXN:"$",PEN:"S/",CLP:"$",BRL:"R$",GBP:"£"}[currency]||"$";
+  const sym = { COP:"$",USD:"US$",EUR:"€",ARS:"$",MXN:"$",PEN:"S/",CLP:"$",BRL:"R$",GBP:"£" }[currency]||"$";
+
+  if (!destinations.length) return {
+    summary: `No encontré destinos desde ${CITY_NAMES[origin]||origin} dentro de ${sym}${budget.toLocaleString()} ${currency} para el ${date}. Prueba con un presupuesto mayor o fecha diferente.`,
+    destinations: [], mode:"explore", origin, budget, currency,
+  };
+
+  const cheapest = destinations[0];
   return {
-    summary:`Con ${sym}${budget.toLocaleString()} ${currency} desde ${CITY_NAMES[origin]||origin} puedes volar a ${destinations.length} destinos. El más económico es ${cheapest.city} desde ${sym}${cheapest.price.toLocaleString()} ${currency}.`,
+    summary: `Con ${sym}${budget.toLocaleString()} ${currency} desde ${CITY_NAMES[origin]||origin} puedes volar a ${destinations.length} destinos. El más económico es ${cheapest.city} desde ${sym}${cheapest.price.toLocaleString()} ${currency}.`,
     destinations, mode:"explore", origin, budget, currency,
   };
 }
