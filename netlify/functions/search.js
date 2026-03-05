@@ -191,8 +191,13 @@ async function searchFlights({ origin, destination, departureDate, returnDate, p
   }
 
   if (!directOffers.length && !smartRoutes.length) {
-    return { summary:`No encontré vuelos de ${origin} a ${destination} para esas fechas.`, flights:[], smartRoutes:[], mode:"search" };
+    return { summary:`No encontré vuelos de ${origin} a ${destination} para esas fechas.`, flights:[], smartRoutes:[], mode:"search", currency };
   }
+
+  // Helper de formato según moneda
+  const SYMS = { COP:"$",USD:"US$",EUR:"€",ARS:"$",MXN:"$",PEN:"S/",CLP:"$",BRL:"R$",GBP:"£" };
+  const sym = SYMS[currency]||"$";
+  const fmtPrice = n => `${sym}${Math.round(n).toLocaleString()}`;
 
   // Procesar vuelos directos
   const prices = directOffers.map(o=>parseFloat(o.price.total));
@@ -212,16 +217,16 @@ async function searchFlights({ origin, destination, departureDate, returnDate, p
 
   let summary = "";
   if (flights.length) {
-    summary = `Encontré ${flights.length} vuelo${flights.length>1?"s":""} de ${origin} a ${destination}. El más económico desde $${Math.round(directMin).toLocaleString("es-CO")} COP`;
+    summary = `Encontré ${flights.length} vuelo${flights.length>1?"s":""} de ${origin} a ${destination}. El más económico desde ${fmtPrice(directMin)} ${currency}`;
     if (saving>0 && smartRoutes.length) {
-      summary += `. ✨ También encontré una Ruta Inteligente que ahorra $${saving.toLocaleString("es-CO")} COP viajando via ${smartRoutes[0].hubCity}.`;
+      summary += `. ✨ Ruta Inteligente disponible via ${smartRoutes[0].hubCity} — ahorra ${fmtPrice(saving)} ${currency}.`;
     } else if (!flights.length && smartRoutes.length) {
-      summary = `No hay vuelos directos pero encontré una Ruta Inteligente via ${smartRoutes[0].hubCity} por $${smartMin.toLocaleString("es-CO")} COP.`;
+      summary = `No hay vuelos directos pero hay una Ruta Inteligente via ${smartRoutes[0].hubCity} por ${fmtPrice(smartMin)} ${currency}.`;
     } else {
       summary += ".";
     }
   } else if (smartRoutes.length) {
-    summary = `No encontré vuelo directo de ${origin} a ${destination} pero hay una Ruta Inteligente via ${smartRoutes[0].hubCity} por $${smartMin.toLocaleString("es-CO")} COP.`;
+    summary = `No encontré vuelo directo de ${origin} a ${destination} pero hay una Ruta Inteligente via ${smartRoutes[0].hubCity} por ${fmtPrice(smartMin)} ${currency}.`;
   }
 
   return { summary, flights, smartRoutes, directMin, smartMin, saving: saving>0?saving:0, mode:"search", currency };
