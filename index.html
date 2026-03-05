@@ -151,7 +151,7 @@ function DestCard({d,idx,origin,onSearch,currency="COP"}) {
       border:hov?"1px solid rgba(0,232,150,0.3)":"1px solid rgba(255,255,255,0.06)",
       borderRadius:"16px",padding:"18px",cursor:"pointer",position:"relative"},
     onMouseEnter:()=>setHov(true),onMouseLeave:()=>setHov(false),
-    onClick:()=>onSearch({origin,destination:d.code,departureDate:d.departureDate})
+    onClick:()=>onSearch({origin,destination:d.code,departureDate:d.departureDate,passengers:1})
   },
     // Header: bandera + ciudad + precio
     React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"14px"}},
@@ -507,6 +507,10 @@ function SearchResults({data,onNew}) {
 
     // Chips resumen
     React.createElement("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"20px"}},
+      (data.flights?.[0]?.departureDate||data.returnDate)&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"10px",padding:"6px 12px"}},
+        React.createElement("span",{style:{fontSize:"12px",color:"#B8D4E8",fontWeight:600}},
+          "📅 ",fmtDate(data.flights?.[0]?.departureDate),
+          data.returnDate?" → "+fmtDate(data.returnDate):" · Solo ida")),
       cheapest>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(0,232,150,0.06)",border:"1px solid rgba(0,232,150,0.15)",borderRadius:"10px",padding:"6px 12px"}},
         "📉 ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#00E896"}},"Vuelo normal desde ",fmt(cheapest,currency))),
       saving>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(255,200,0,0.06)",border:"1px solid rgba(255,200,0,0.2)",borderRadius:"10px",padding:"6px 12px"}},
@@ -553,7 +557,7 @@ function ExploreResults({data,onSearch,onNew}) {
         "Clic en un destino para ver los vuelos disponibles 👇"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"12px"}},
         data.destinations.map((d,i)=>React.createElement(DestCard,{key:d.code,d,idx:i,origin:data.origin,currency:data.currency||"COP",
-          onSearch:params=>onSearch({...params,budget:data.budget,currency:data.currency||"COP",mode:"search"})})))),
+          onSearch:params=>onSearch({...params,budget:data.budget,currency:data.currency||"COP",returnDate:data.returnDate||null,mode:"search"})})))),
     React.createElement("button",{onClick:onNew,
       style:{marginTop:"20px",padding:"10px 20px",borderRadius:"100px",background:"none",border:"1px solid rgba(255,255,255,0.1)",color:"#4A6B8A",fontSize:"13px",cursor:"pointer",fontFamily:"inherit",fontWeight:500}},
       "← Nueva búsqueda"));
