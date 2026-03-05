@@ -101,11 +101,12 @@ function addDurations(d1, d2) {
 }
 
 // ── Buscar un tramo con manejo de errores ──────────────────
-async function searchLeg(origin, destination, date, passengers, token, currency="COP") {
+async function searchLeg(origin, destination, date, passengers, token, currency="COP", returnDate=null) {
   try {
     const params = querystring.stringify({
       originLocationCode:origin, destinationLocationCode:destination,
       departureDate:date, adults:passengers, max:2, currencyCode:currency,
+      ...(returnDate ? { returnDate } : {}),
     });
     const r = await httpsGet(`/v2/shopping/flight-offers?${params}`, token);
     return r.data || [];
@@ -142,8 +143,8 @@ async function searchFlights({ origin, destination, departureDate, returnDate, p
   const token = await getToken();
   const pax = passengers||1;
 
-  // 1. Buscar vuelo directo
-  const directOffers = await searchLeg(origin, destination, departureDate, pax, token, currency);
+  // 1. Buscar vuelo directo (con ida y vuelta si aplica)
+  const directOffers = await searchLeg(origin, destination, departureDate, pax, token, currency, returnDate||null);
 
   // 2. Si smartRoute activo, buscar rutas partidas en paralelo
   let smartRoutes = [];
@@ -229,12 +230,12 @@ async function searchFlights({ origin, destination, departureDate, returnDate, p
     summary = `No encontré vuelo directo de ${origin} a ${destination} pero hay una Ruta Inteligente via ${smartRoutes[0].hubCity} por ${fmtPrice(smartMin)} ${currency}.`;
   }
 
-  return { summary, flights, smartRoutes, directMin, smartMin, saving: saving>0?saving:0, mode:"search", currency };
+  return { summary, flights, smartRoutes, directMin, smartMin, saving: saving>0?saving:0, mode:"search", currency, returnDate: returnDate||null };
 }
 
 // ── Modo 2: Exploración por presupuesto ───────────────────
 // ── Modo 2: Exploración por presupuesto (búsquedas reales en paralelo) ──
-async function exploreByBudget({ origin, budget, departureDate, currency="COP" }) {
+async function exploreByBudget({ origin, budget, departureDate, returnDate, currency="COP" }) {
   const token = await getToken();
 
   // Fecha por defecto: 30 días desde hoy
@@ -313,13 +314,13 @@ async function exploreByBudget({ origin, budget, departureDate, currency="COP" }
 
   if (!destinations.length) return {
     summary: `No encontré destinos desde ${CITY_NAMES[origin]||origin} dentro de ${sym}${budget.toLocaleString()} ${currency} para el ${date}. Prueba con un presupuesto mayor o fecha diferente.`,
-    destinations: [], mode:"explore", origin, budget, currency,
+    destinations: [], mode:"explore", origin, budget, currency, returnDate: returnDate||null,
   };
 
   const cheapest = destinations[0];
   return {
     summary: `Con ${sym}${budget.toLocaleString()} ${currency} desde ${CITY_NAMES[origin]||origin} puedes volar a ${destinations.length} destinos. El más económico es ${cheapest.city} desde ${sym}${cheapest.price.toLocaleString()} ${currency}.`,
-    destinations, mode:"explore", origin, budget, currency,
+    destinations, mode:"explore", origin, budget, currency, returnDate: returnDate||null,
   };
 }
 
