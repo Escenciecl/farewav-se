@@ -262,14 +262,37 @@ async function exploreByBudget({ origin, budget, departureDate, currency="COP" }
         if (!offer) return null;
         const price = Math.round(parseFloat(offer.price.total));
         if (price > budget) return null;
-        const seg = offer.itineraries[0].segments;
+        const itin = offer.itineraries[0];
+        const seg = itin.segments;
+        const first = seg[0], last = seg[seg.length-1];
+        const airlineCode = offer.validatingAirlineCodes?.[0]||first.carrierCode;
+        const stops = seg.length - 1;
+
+        // Info de escalas
+        let layovers = [];
+        for (let i=0; i<seg.length-1; i++) {
+          const waitMs = new Date(seg[i+1].departure.at) - new Date(seg[i].arrival.at);
+          const waitH = Math.floor(waitMs/3600000);
+          const waitM = Math.floor((waitMs%3600000)/60000);
+          layovers.push({
+            city: seg[i].arrival.iataCode,
+            cityName: CITY_NAMES[seg[i].arrival.iataCode]||seg[i].arrival.iataCode,
+            wait: `${waitH}h${waitM>0?waitM+"m":""}`,
+          });
+        }
+
         return {
           code: dest,
           city: CITY_NAMES[dest] || dest,
           price,
           departureDate: date,
-          stops: seg.length - 1,
-          duration: formatDuration(offer.itineraries[0].duration),
+          departure: first.departure.at.slice(11,16),
+          arrival: last.arrival.at.slice(11,16),
+          stops,
+          duration: formatDuration(itin.duration),
+          airline: AIRLINE_NAMES[airlineCode]||airlineCode,
+          airlineCode,
+          layovers,
         };
       } catch(e) { return null; }
     })
