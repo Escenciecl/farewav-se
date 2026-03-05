@@ -268,6 +268,56 @@ function ExploreForm({onSearch,onBack}) {
         "Descubrir destinos 🌍")));
 }
 
+/* ── Smart Route Card ── */
+function SmartRouteCard({route,idx}) {
+  const [vis,setVis]=useState(false),[open,setOpen]=useState(false),[hov,setHov]=useState(false);
+  useEffect(()=>{const t=setTimeout(()=>setVis(true),idx*120+60);return()=>clearTimeout(t);},[]);
+  return React.createElement("div",{
+    style:{opacity:vis?1:0,transform:vis?"translateY(0)":"translateY(10px)",transition:"all 0.45s cubic-bezier(.22,1,.36,1)",
+      background:hov?"rgba(255,200,0,0.04)":"rgba(255,200,0,0.02)",
+      border:hov?"1px solid rgba(255,200,0,0.35)":"1px solid rgba(255,200,0,0.15)",
+      borderRadius:"14px",overflow:"hidden"},
+    onMouseEnter:()=>setHov(true),onMouseLeave:()=>setHov(false)
+  },
+    // Header
+    React.createElement("div",{style:{padding:"16px 20px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:"12px"},onClick:()=>setOpen(o=>!o)},
+      React.createElement("div",{style:{flex:1}},
+        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}},
+          React.createElement("span",{style:{fontSize:"13px",background:"rgba(255,200,0,0.1)",color:"#FFD700",fontWeight:700,padding:"3px 10px",borderRadius:"100px",border:"1px solid rgba(255,200,0,0.2)"}},"✨ Ruta Inteligente"),
+          React.createElement("span",{style:{fontSize:"11px",color:"#4A6B8A"}},"2 tickets separados")),
+        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:"16px",flexWrap:"wrap"}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:"8px"}},
+            React.createElement("span",{style:{fontSize:"13px",color:"#B8D4E8",fontWeight:600}},route.leg1.from),
+            React.createElement("span",{style:{fontSize:"11px",color:"#4A6B8A"}},"→"),
+            React.createElement("span",{style:{fontSize:"13px",color:"#FFD700",fontWeight:700}},route.hubCity),
+            React.createElement("span",{style:{fontSize:"11px",color:"#4A6B8A"}},"→"),
+            React.createElement("span",{style:{fontSize:"13px",color:"#B8D4E8",fontWeight:600}},route.leg2.to)),
+          React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A"}},"⏱ ",route.totalDuration," total · ",route.layoverHours,"h en ",route.hubCity))),
+      React.createElement("div",{style:{textAlign:"right",flexShrink:0}},
+        React.createElement("div",{style:{fontSize:"22px",fontWeight:800,color:"#FFD700",letterSpacing:"-0.04em",lineHeight:1}},fmt(route.price)),
+        React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A",marginTop:"2px"}},"total COP"),
+        React.createElement("div",{style:{fontSize:"11px",color:open?"#4A6B8A":"#FFD700",marginTop:"6px",fontWeight:600}},open?"▲ cerrar":"▼ ver tramos"))),
+    // Expandido
+    open&&React.createElement("div",{style:{padding:"0 20px 16px",borderTop:"1px solid rgba(255,200,0,0.1)"}},
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginTop:"14px",flexWrap:"wrap"}},
+        [route.leg1,route.leg2].map((leg,i)=>
+          React.createElement("div",{key:i,style:{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:"10px",padding:"12px 14px"}},
+            React.createElement("div",{style:{fontSize:"10px",fontWeight:700,color:"#FFD700",letterSpacing:"0.06em",marginBottom:"8px"}},"TRAMO "+(i+1)+" · TICKET SEPARADO"),
+            React.createElement("div",{style:{display:"flex",alignItems:"center",gap:"10px",marginBottom:"6px"}},
+              React.createElement("div",{style:{textAlign:"center"}},
+                React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#E8F4FF"}},leg.departure),
+                React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A"}},leg.from)),
+              React.createElement("div",{style:{flex:1,textAlign:"center"}},
+                React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A"}},leg.duration),
+                React.createElement("div",{style:{fontSize:"10px",color:leg.stops===0?"#00E896":"#1C8EFF",fontWeight:700}},leg.stops===0?"Directo":"1 escala")),
+              React.createElement("div",{style:{textAlign:"center"}},
+                React.createElement("div",{style:{fontSize:"20px",fontWeight:800,color:"#E8F4FF"}},leg.arrival),
+                React.createElement("div",{style:{fontSize:"10px",color:"#4A6B8A"}},leg.to))),
+            React.createElement("div",{style:{fontSize:"16px",fontWeight:700,color:"#FFD700"}},"→ ",fmt(leg.price))))),
+      React.createElement("div",{style:{marginTop:"12px",background:"rgba(255,200,0,0.04)",border:"1px solid rgba(255,200,0,0.1)",borderRadius:"10px",padding:"10px 14px",fontSize:"12px",color:"#7A9BB5",lineHeight:1.6}},
+        "⚠️ ",React.createElement("strong",{style:{color:"#B8D4E8"}},"Importante:")," estos son 2 tickets independientes. Si pierdes la conexión en ",route.hubCity," la aerolínea no está obligada a reembarcarte. Recomendamos al menos ",Math.max(route.layoverHours,3),"h de margen.")));
+}
+
 /* ── Results: Search Mode ── */
 function SearchResults({data,onNew}) {
   const [sort,setSort]=useState("best");
@@ -275,6 +325,8 @@ function SearchResults({data,onNew}) {
   const sorted = [...(data.flights||[])].sort((a,b)=>sort==="price"?a.price-b.price:sort==="fast"?a.duration.localeCompare(b.duration):(b.best?1:0)-(a.best?1:0));
   const directs = data.flights?.filter(f=>f.stops===0).length||0;
   const cheapest = data.flights?.length ? Math.min(...data.flights.map(f=>f.price)) : 0;
+  const hasSmart = data.smartRoutes?.length>0;
+  const saving = data.saving||0;
 
   return React.createElement("div",{style:{animation:"fadeUp 0.4s ease",maxWidth:"680px",width:"100%"}},
     React.createElement("div",{style:{display:"flex",alignItems:"flex-start",gap:"12px",marginBottom:"20px"}},
@@ -282,22 +334,39 @@ function SearchResults({data,onNew}) {
       React.createElement("div",{style:{flex:1}},
         React.createElement("div",{style:{fontSize:"11px",fontWeight:700,color:"#00E896",marginBottom:"6px",letterSpacing:"0.08em",textTransform:"uppercase"}},"Farewave"),
         React.createElement("p",{style:{fontSize:"15px",lineHeight:1.75,color:"#B8D4E8",margin:0}},data.summary))),
+
+    // Chips resumen
+    React.createElement("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"20px"}},
+      cheapest>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(0,232,150,0.06)",border:"1px solid rgba(0,232,150,0.15)",borderRadius:"10px",padding:"6px 12px"}},
+        "📉 ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#00E896"}},"Vuelo normal desde ",fmt(cheapest))),
+      saving>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(255,200,0,0.06)",border:"1px solid rgba(255,200,0,0.2)",borderRadius:"10px",padding:"6px 12px"}},
+        "✨ ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#FFD700"}},"Ruta inteligente ahorra ",fmt(saving))),
+      directs>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(28,142,255,0.06)",border:"1px solid rgba(28,142,255,0.15)",borderRadius:"10px",padding:"6px 12px"}},
+        "⚡ ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#1C8EFF"}},directs," directo",directs>1?"s":""))),
+
+    // Vuelos normales
     data.flights?.length>0&&React.createElement("div",null,
-      React.createElement("div",{style:{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}},
-        cheapest>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(0,232,150,0.06)",border:"1px solid rgba(0,232,150,0.15)",borderRadius:"10px",padding:"6px 12px"}},
-          "📉 ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#00E896"}},"Desde ",fmt(cheapest))),
-        directs>0&&React.createElement("div",{style:{display:"inline-flex",alignItems:"center",gap:"6px",background:"rgba(28,142,255,0.06)",border:"1px solid rgba(28,142,255,0.15)",borderRadius:"10px",padding:"6px 12px"}},
-          "⚡ ",React.createElement("span",{style:{fontSize:"12px",fontWeight:600,color:"#1C8EFF"}},directs," vuelo",directs>1?"s":""," directo",directs>1?"s":""))),
-      React.createElement("div",{style:{display:"flex",gap:"7px",marginBottom:"14px"}},
+      React.createElement("div",{style:{fontSize:"12px",fontWeight:700,color:"#4A6B8A",letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:"10px"}},"Vuelos disponibles"),
+      React.createElement("div",{style:{display:"flex",gap:"7px",marginBottom:"12px"}},
         [["best","Mejor precio"],["price","Más barato"],["fast","Más rápido"]].map(([k,l])=>
           React.createElement("button",{key:k,onClick:()=>setSort(k),
             style:{padding:"5px 14px",borderRadius:"100px",fontSize:"12px",fontWeight:600,cursor:"pointer",fontFamily:"inherit",
               border:sort===k?"1px solid rgba(0,232,150,0.4)":"1px solid rgba(255,255,255,0.08)",
               background:sort===k?"rgba(0,232,150,0.1)":"transparent",color:sort===k?"#00E896":"#4A6B8A"}},l))),
-      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:"10px"}},
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:"10px",marginBottom:"24px"}},
         sorted.map((f,i)=>React.createElement(FlightCard,{key:i,f,maxPrice:maxP,idx:i})))),
+
+    // Rutas Inteligentes
+    hasSmart&&React.createElement("div",null,
+      React.createElement("div",{style:{display:"flex",alignItems:"center",gap:"10px",marginBottom:"12px"}},
+        React.createElement("div",{style:{fontSize:"12px",fontWeight:700,color:"#FFD700",letterSpacing:"0.06em",textTransform:"uppercase"}},"✨ Rutas Inteligentes"),
+        React.createElement("div",{style:{flex:1,height:"1px",background:"rgba(255,200,0,0.1)"}}),
+        React.createElement("div",{style:{fontSize:"11px",color:"#4A6B8A"}},"Tickets separados · Mayor ahorro")),
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:"10px"}},
+        data.smartRoutes.map((r,i)=>React.createElement(SmartRouteCard,{key:i,route:r,idx:i})))),
+
     React.createElement("button",{onClick:onNew,
-      style:{marginTop:"20px",padding:"10px 20px",borderRadius:"100px",background:"none",border:"1px solid rgba(255,255,255,0.1)",color:"#4A6B8A",fontSize:"13px",cursor:"pointer",fontFamily:"inherit",fontWeight:500}},
+      style:{marginTop:"24px",padding:"10px 20px",borderRadius:"100px",background:"none",border:"1px solid rgba(255,255,255,0.1)",color:"#4A6B8A",fontSize:"13px",cursor:"pointer",fontFamily:"inherit",fontWeight:500}},
       "← Nueva búsqueda"));
 }
 
